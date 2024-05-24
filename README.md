@@ -46,9 +46,6 @@ You may also need to install ffmpeg, rust etc. Follow openAI instructions here h
 ```python
 import os
 import sys
-# Ensure transformers module is accessible
-transformers_path = os.path.join(os.getcwd(), "transformers/src")
-sys.path.insert(0, str(transformers_path))
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from datasets import load_dataset
