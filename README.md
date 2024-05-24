@@ -1,3 +1,4 @@
+# CrisperWhisper++
 
 This repository provides fast automatic and verbatim speech recognition with accurate word-level timestamps for our Whisper variant CrisperWhisper++ in english. We make the following improvements to Whisper:
 
