@@ -73,7 +73,7 @@ def process_audio_bytes(audio_bytes: bytes) -> torch.Tensor:
     y_std  = np.std(y)
     y_normalized = (y - y_mean) / y_std
     transform = T.Resample(sr, 16000)
-    waveform = transform(torch.unsqueeze(torch.tensor(y_normalized), 0))
+    waveform = transform(torch.unsqueeze(torch.tensor(y_normalized/5), 0))
     torchaudio.save('sample.wav', waveform, sample_rate=16000)
     return waveform
 
