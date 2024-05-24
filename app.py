@@ -8,11 +8,17 @@ import io
 import torchaudio
 from streamlit_mic_recorder import mic_recorder
 import moviepy.editor as mp
+import argparse
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Streamlit app for speech transcription.')
+parser.add_argument('--model_id', type=str, required=True, help='Path to the model directory')
+args = parser.parse_args()
+model_id = args.model_id
 
 # Set up device and data type for processing
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-model_id = "/home/azureuser/laurin/code/research/output/crisper_whisper_timestamp_finetuned"
 
 # Load model and processor from the specified path
 @st.cache_resource
@@ -28,74 +34,46 @@ def load_model_and_processor(model_id):
 model, processor = load_model_and_processor(model_id)
 
 # Setup the pipeline
-pipe = pipeline(
-    "automatic-speech-recognition",
-    model=model,
-    tokenizer=processor.tokenizer,
-    feature_extractor=processor.feature_extractor,
-    max_new_tokens=800,
-    chunk_length_s=30,
-    batch_size=1,
-    return_timestamps=True,
-    torch_dtype=torch_dtype,
-    device=device,
-)
+@st.cache_resource
+def setup_pipeline(_model, _processor):
+    return pipeline(
+        "automatic-speech-recognition",
+        model=_model,
+        tokenizer=_processor.tokenizer,
+        feature_extractor=_processor.feature_extractor,
+        max_new_tokens=800,
+        chunk_length_s=30,
+        batch_size=1,
+        return_timestamps=True,
+        torch_dtype=torch_dtype,
+        device=device,
+    )
+
+pipe = setup_pipeline(model, processor)
 
 def wav_to_black_mp4(wav_path, output_path, fps=25):
-    """
-    Converts a wav file to an mp4 with a black video stream.
-
-    Args:
-        wav_path: Path to the input wav file.
-        output_path: Path to save the output mp4 file.
-        fps: The desired frame rate for the video (default: 25 fps).
-    """
-    # Create a blank clip with the same duration as the audio
     waveform, sample_rate = torchaudio.load(wav_path)
     duration = waveform.shape[1] / sample_rate
     audio = mp.AudioFileClip(wav_path)
     black_clip = mp.ColorClip((256, 250), color=(0, 0, 0), duration=duration)
-
-    # Combine the audio with the black video clip
     final_clip = black_clip.set_audio(audio)
-
-    # Write the final clip to an mp4 file
     final_clip.write_videofile(output_path, fps=fps)
-    
-def vtt_to_bytesio():
-        with open("subtitles.vtt", 'r', encoding='utf-8') as file:
-            vtt_content = file.read()
-                # Convert the content to BytesIO stream
-        vtt_bytesio = io.BytesIO(vtt_content.encode('utf-8'))
-        return vtt_bytesio
+
 
 def timestamps_to_srt(timestamps):
-    """
-    Converts a list of timestamps with text data to WebVTT (.vtt) format string.
-
-    Args:
-        timestamps: A list of dictionaries containing 'text' and 'timestamp' keys.
-
-    Returns:
-        A string containing the subtitle data in WebVTT format.
-    """
     vtt_content = "WEBVTT\n\n"
-    # Counter for subtitle line numbers
     for word in timestamps:
         start_time, end_time = word["timestamp"]
-        # Format timestamps into hours:minutes:seconds.milliseconds format
         start_time_str = f"{int(start_time // 3600)}:{int(start_time // 60 % 60):02d}:{start_time % 60:06.3f}".replace('.', '.')
         end_time_str = f"{int(end_time // 3600)}:{int(end_time // 60 % 60):02d}:{end_time % 60:06.3f}".replace('.', '.')
-        
-        # Add subtitle line with timings and text
         vtt_content += f"{start_time_str} --> {end_time_str}\n{word['text']}\n\n"
     return vtt_content
 
-def transcribe(audio_bytes):
+
+def process_audio_bytes(audio_bytes):
     audio_stream = io.BytesIO(audio_bytes)
     sr, y = wavfile.read(audio_stream)
-    y = y.astype(np.float32)  # Ensure y is float for processing
-        # Scale y to have zero mean and unit variance
+    y = y.astype(np.float32)
     y_mean = np.mean(y)
     y_std = np.std(y)
     y_normalized = (y - y_mean) / y_std
@@ -103,10 +81,12 @@ def transcribe(audio_bytes):
     waveform = transform(torch.unsqueeze(torch.tensor(y_normalized), 0))
     waveform_to_save = transform(torch.unsqueeze(torch.tensor(y_normalized), 0))
     torchaudio.save('sample.wav', waveform_to_save, sample_rate=16000)
-    # Ensure waveform is a numpy array and run through the model
+    return waveform
+
+def transcribe(audio_bytes):
+    waveform = process_audio_bytes(audio_bytes)
     transcription = pipe(waveform[0, :].numpy(), return_timestamps="word")
-    text = transcription
-    return text
+    return transcription
 
 # Streamlit app interface
 st.title("CrisperWhisper++ 🦻")
@@ -125,40 +105,39 @@ audio = mic_recorder(
     kwargs={},
     key=None
 )
-if audio:
-    audio_bytes = audio['bytes']
-else:
-    audio_bytes = None
+
+audio_bytes = audio['bytes'] if audio else None
 
 # Audio file upload handling
 audio_file = st.file_uploader("Or upload an audio file", type=["wav", "mp3", "ogg"])
+
 if audio_file is not None:
-    transcription = transcribe(audio_file.getvalue())
-    vtt = timestamps_to_srt(transcription['chunks'])
-    wav_to_black_mp4('sample.wav', 'video.mp4')
-    st.video('video.mp4', subtitles='subtitles.vtt')
-    st.subheader("Transcription")
-    st.markdown(f"""
-        <div style="background-color: #f0f0f0; padding: 10px; border-radius: 5px;">
-            <p style="font-size: 16px; color: #333;">{transcription['text']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+    audio_bytes = audio_file.getvalue()
 
-
-# Display the record button and handle audio data
 if audio_bytes:
-    transcription = transcribe(audio_bytes)
-    vtt = timestamps_to_srt(transcription['chunks'])
-    with open("subtitles.vtt", "w") as file:
-        file.write(vtt)
+    try:
+        transcription = transcribe(audio_bytes)
+        vtt = timestamps_to_srt(transcription['chunks'])
         
-    wav_to_black_mp4('sample.wav', 'video.mp4')
-    st.video('video.mp4', subtitles='subtitles.vtt')
-# Display the transcription with enhanced styling
-    st.subheader("Transcription:")
-    st.markdown(f"""
-        <div style="background-color: #f0f0f0; padding: 10px; border-radius: 5px;">
-            <p style="font-size: 16px; color: #333;">{transcription['text']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+        with open("subtitles.vtt", "w") as file:
+            file.write(vtt)
+            
+        wav_to_black_mp4('sample.wav', 'video.mp4')
+        
+        st.video('video.mp4', subtitles='subtitles.vtt')
+        st.subheader("Transcription:")
+        st.markdown(f"""
+            <div style="background-color: #f0f0f0; padding: 10px; border-radius: 5px;">
+                <p style="font-size: 16px; color: #333;">{transcription['text']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    except Exception as e:
+        st.error(f"An error occurred during transcription: {e}")
 
+# Footer
+st.markdown("""
+    <hr>
+    <footer>
+        <p style="text-align: center;">© 2024 nyra health GmbH</p>
+    </footer>
+    """, unsafe_allow_html=True)

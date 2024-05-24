@@ -41,7 +41,7 @@ $ cd crisperWhisper++
 You may also need to install ffmpeg, rust etc. Follow openAI instructions here https://github.com/openai/whisper#setup.
 
 
-## Python usage  🐍
+## 4. Python usage  🐍
 
 ```python
 import os
@@ -84,3 +84,52 @@ sample = dataset[0]["audio"]
 result = pipe(sample, return_timestamps="word")
 print(result)
 ```
+
+## 5. Running the Streamlit App
+
+To use the CrisperWhisper++ model with a user-friendly interface, you can run the provided Streamlit app. This app allows you to record or upload audio files for transcription and view the results with accurate word-level timestamps.
+
+### Prerequisites
+
+Make sure you have followed the [Setup ⚙️](#setup) instructions above and have the `crisperWhisper++` environment activated.
+
+### Steps to Run the Streamlit App
+
+1. **Activate the Conda Environment**
+
+    Ensure you are in the `crisperWhisper++` environment:
+    ```sh
+    conda activate crisperWhisper++
+    ```
+
+2. **Navigate to the App Directory**
+
+    Change directory to where the `app.py` script is located:
+
+
+3. **Run the Streamlit App**
+
+    Use the following command to run the app. Make sure to replace `/path/to/your/model` with the actual path to your CrisperWhisper++ model directory:
+    ```sh
+    streamlit run app.py -- --model_id /path/to/your/model
+    ```
+
+    For example:
+    ```sh
+    streamlit run app.py -- --model_id /home/azureuser/laurin/code/research/output/crisper_whisper++
+    ```
+
+4. **Access the App**
+
+    After running the command, the Streamlit server will start, and you can access the app in your web browser at:
+    ```
+    http://localhost:8501
+    ```
+
+### Features of the App
+
+- **Record Audio**: Record audio directly using your microphone.
+- **Upload Audio**: Upload audio files in formats like WAV, MP3, or OGG.
+- **Transcription**: Get accurate verbatim transcriptions including fillers
+- **Video Generation**: View the transcription with timestamps alongside a video with a black background.
+
