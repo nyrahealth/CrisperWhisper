@@ -446,10 +446,11 @@ def batch_evaluate_segmentation(
     max_number_of_evals: int = -1,
 ) -> PrecisionRecallMetrics:
     if len(references) != len(predictions):
-        raise ValueError(
+        print(
             f"There need to be as many reference entities (currently {len(references)}) "
             f"as prediction entities (currently {len(predictions)})."
         )
+        return PrecisionRecallMetrics(tp=0, fp=0, fn=0, ious=[]), []
     seg_metrics_list = []
     eval_count = 0
     for ref, pred in zip(references, predictions):
