@@ -1,21 +1,32 @@
 # CrisperWhisper++
 
-This repository provides fast automatic and verbatim speech recognition with accurate word-level timestamps for our Whisper variant CrisperWhisper++ in english. We make the following improvements to Whisper:
+**Whisper** is an ASR model [developed by OpenAI](https://github.com/openai/whisper), trained on a large dataset of diverse audio. Whilst it does produces highly accurate transcriptions they do follow more of a intended style possibly omitting false starts and fillers. Further timestamps are inaccurate especially around pauses and speech disfluencies.
+
+This repository provides a extension of Whisper for fast automatic and verbatim speech recognition with accurate word-level timestamps. We call our variant CrisperWhisper++.  We make the following improvements to Whisper:
 
 - 🎯 **Accurate word-level timestamps** even around disfluencies and pauses using an adjusted tokenizer and training with a custom attention loss.
 - 📝 **Accurate verbatim transcription** In contrast to Whisper which follows more of a intended transcription style CrisperWhisper++ aims at transcribing every spoken word precisely
-- 🔍 **Filler detection** Fillers like "um" and "uh" are canonically transcribed detected with high accuracy
+- 🔍 **Filler detection** Fillers like "um" and "uh" are canonically transcribed and detected with high accuracy
 - 🛡️ **Hallucination mitigation** minimize hallucinations 
 
+### Performance Overview
 
-**Whisper** is an ASR model [developed by OpenAI](https://github.com/openai/whisper), trained on a large dataset of diverse audio. Whilst it does produces highly accurate transcriptions they do follow more of a intended style possibly omitting false starts and fillers. Further timestamps are inaccurate especially around pauses and speech disfluencies.
+One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and IOU as defined in our Paper on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset. 
+
+![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_IOU_vs_number_of_heads_collar_0.1_dataset_timit.png)
+
+This difference is much more pronounced in scenarios surrounding disfluencies. More plots can from experiments be found in the `plots` folder.
+
+
 
 <h2 align="left", id="highlights">New🚨</h2>
 
-- 1st place at [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard)  🏆
+- 1st place at [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim Datasets (ted, ami) 🏆
 - _CrisperWhisper_ accepted at INTERSPEECH 2024
 - Paper drop🎓👨‍🏫! Please see our [ArxiV preprint](.....) regarding the details of adjusting the tokenizer and training.
 - Additonally added a AttentionLoss to further improve timestamp accuracy
+
+
 
 <h2 align="left" id="setup">Setup ⚙️</h2>
 Tested for PyTorch 2.0, Python 3.10
