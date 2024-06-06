@@ -11,11 +11,25 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 
 ### Performance Overview
 
-One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and IOU as defined in our Paper on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset. 
+One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and Avg IOU as defined in our Paper on three different Datasets.
 
-![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_IOU_vs_number_of_heads_collar_0.1_dataset_timit.png)
+| Dataset                          | Metric     | CrisperWhisper++ | Large-v2 | Large-v3 |
+|----------------------------------|------------|------------------|----------|----------|
+| ami_hf                           | F1 Score   | 0.902851         | 0.853282 | 0.858086 |
+|                                  | Avg IOU    | 0.858781         | 0.737205 | 0.770676 |
+| cv_14                            | F1 Score   | 0.818483         | 0.513088 | 0.601556 |
+|                                  | Avg IOU    | 0.818569         | 0.741766 | 0.764548 |
+| timit                            | F1 Score   | 0.798538         | 0.670307 | 0.724891 |
+|                                  | Avg IOU    | 0.834713         | 0.744916 | 0.785411 |
 
-This difference is much more pronounced in scenarios surrounding disfluencies. More plots can from experiments be found in the `plots` folder.
+
+
+ One can clearly see the superiority of CrisperWhisper++ vs. the baseline. 
+ Varying the collars on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset confirms that timestamps are improved quite significantly. 
+ 
+![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_timit.png)
+
+This difference is much more pronounced in scenarios surrounding disfluencies. More plots and ablations can be found in the `run_experiments/plots` folder.
 
 
 
