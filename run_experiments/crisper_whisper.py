@@ -1,24 +1,24 @@
-import sys
-from typing import Optional
-from pathlib import Path
+from typing import Any, Optional
 
 import torch
 from transformers import WhisperForConditionalGeneration
-class WhisperForConditionalGenerationWithAttentionLoss(WhisperForConditionalGeneration):
-    
-    generation_config = None
-    
-    def average_heads(self, cross_attentions):
-            heads = self.generation_config.alignment_heads
-            # Initialize an accumulator tensor with zeros with the shape of the 0th head's attention from the first tensor
-            accumulator = torch.zeros_like(cross_attentions[0][:, 0, :, :])
-            
-            for head in heads:
-                accumulator += cross_attentions[head[0]].to(torch.float32)[:,head[1],:,:]
-            # Calculate the average across all tensors in the list
-            average_across_list = accumulator / len(heads)
 
-            return average_across_list
+
+class WhisperForConditionalGenerationWithAttentionLoss(WhisperForConditionalGeneration):
+
+    generation_config = None
+
+    def average_heads(self, cross_attentions):
+        heads = self.generation_config.alignment_heads
+        # Initialize an accumulator tensor with zeros with the shape of the 0th head's attention from the first tensor
+        accumulator = torch.zeros_like(cross_attentions[0][:, 0, :, :])
+
+        for head in heads:
+            accumulator += cross_attentions[head[0]].to(torch.float32)[:, head[1], :, :]
+        # Calculate the average across all tensors in the list
+        average_across_list = accumulator / len(heads)
+
+        return average_across_list
 
     def forward(
         self,
@@ -40,7 +40,7 @@ class WhisperForConditionalGenerationWithAttentionLoss(WhisperForConditionalGene
         output_attentions: Optional[bool] = True,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ):
+    ) -> Any:
         original_output = super().forward(
             input_features,
             attention_mask,
@@ -61,13 +61,11 @@ class WhisperForConditionalGenerationWithAttentionLoss(WhisperForConditionalGene
         )
         cross_attentions = original_output.cross_attentions
 
-
-
         if original_output.loss is not None and attention_labels is not None:
-            cross_attention_matrices_b_t_a = self.average_heads(
-                cross_attentions
-            ).to(torch.float32)
-            standardized_attentions_b_t_a = cross_attention_matrices_b_t_a 
+            cross_attention_matrices_b_t_a = self.average_heads(cross_attentions).to(
+                torch.float32
+            )
+            standardized_attentions_b_t_a = cross_attention_matrices_b_t_a
             standardized_attentions_b_t_a = torch.mul(
                 standardized_attentions_b_t_a, attention_mask_for_loss
             )  # ignore attentions that are far out from words...

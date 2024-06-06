@@ -1,4 +1,6 @@
-# Byte-compiled / optimized / DLL files
+.idea
+
+#Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -122,4 +124,3 @@ dmypy.json
 .pyright/
 
 # End of https://www.toptal.com/developers/gitignore/api/python
-

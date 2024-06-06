@@ -7,7 +7,7 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 - 🎯 **Accurate word-level timestamps** even around disfluencies and pauses using an adjusted tokenizer and training with a custom attention loss.
 - 📝 **Accurate verbatim transcription** In contrast to Whisper which follows more of a intended transcription style CrisperWhisper++ aims at transcribing every spoken word precisely
 - 🔍 **Filler detection** Fillers like "um" and "uh" are canonically transcribed and detected with high accuracy
-- 🛡️ **Hallucination mitigation** minimize hallucinations 
+- 🛡️ **Hallucination mitigation** minimize hallucinations
 
 ### Performance Overview
 
@@ -24,9 +24,9 @@ One can see the superior performance of CrisperWhisper++ compared to the baselin
 
 
 
- One can clearly see the superiority of CrisperWhisper++ vs. the baseline. 
- Varying the collars on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset confirms that timestamps are improved quite significantly. 
- 
+ One can clearly see the superiority of CrisperWhisper++ vs. the baseline.
+ Varying the collars on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset confirms that timestamps are improved quite significantly.
+
 ![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_timit.png)
 
 This difference is much more pronounced in scenarios surrounding disfluencies. More plots and ablations can be found in the `run_experiments/plots` folder.
@@ -56,8 +56,8 @@ GPU execution requires the NVIDIA libraries cuBLAS 11.x and cuDNN 8.x to be inst
 ### 2. clone this repo
 
 ```
-$ git clone https://github.com/nyra/crisperWhisper++.git
-$ cd crisperWhisper++
+$ git clone https://github.com/myReha/crisperWhisper.git
+$ cd crisperWhisper
 ```
 
 ### 3. Install dependencies
@@ -155,4 +155,3 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 - **Upload Audio**: Upload audio files in formats like WAV, MP3, or OGG.
 - **Transcription**: Get accurate verbatim transcriptions including fillers
 - **Video Generation**: View the transcription with timestamps alongside a video with a black background.
-

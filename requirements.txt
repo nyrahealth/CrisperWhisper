@@ -26,7 +26,7 @@ colorlog==6.8.2
 comm==0.2.2
 contourpy==1.2.1
 cryptography==42.0.7
-ctranslate2==4.3.0
+ctranslate2==4.2.1
 cycler==0.12.1
 Cython==3.0.10
 datasets==2.19.1
@@ -197,12 +197,12 @@ tokenizers==0.15.2
 toml==0.10.2
 tomlkit==0.12.0
 toolz==0.12.1
-torch==2.3.0+cu118
+torch==2.3.0
 torch-audiomentations==0.11.1
 torch-pitch-shift==1.2.4
-torchaudio==2.3.0+cu118
+torchaudio==2.3.0
 torchmetrics==1.4.0.post0
-torchvision==0.18.0+cu118
+torchvision==0.18.0
 tornado==6.4
 tqdm==4.66.4
 traitlets==5.14.3
