@@ -13,16 +13,6 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 
 One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and Avg IOU as defined in our Paper on three different Datasets.
 
-| Dataset                          | Metric     | CrisperWhisper++ | Large-v2 | Large-v3 | WhisperTimestamped | WhisperX |
-|----------------------------------|------------|------------------|----------|----------|--------------------|----------|
-| ami_hf                           | F1 Score   | 0.902851         | 0.853282 | 0.858086 | 0.758912           | 0.662008 |
-|                                  | Avg IOU    | 0.858781         | 0.737205 | 0.770676 | 0.750742           | 0.602482 |
-| cv_14                            | F1 Score   | 0.818483         | 0.513088 | 0.601556 | 0.527464           | 0.688907 |
-|                                  | Avg IOU    | 0.818569         | 0.741766 | 0.764548 | 0.731763           | 0.640127 |
-| synthetic_no_fillers_long_pauses | F1 Score   | 0.852555         | 0.570134 | 0.693468 | 0.434122           | 0.731008 |
-|                                  | Avg IOU    | 0.740071         | 0.659972 | 0.677428 | 0.592703           | 0.670647 |
-| timit                            | F1 Score   | 0.798538         | 0.670307 | 0.724891 | 0.680914           | 0.832424 |
-|                                  | Avg IOU    | 0.834713         | 0.744916 | 0.785411 | 0.738263           | 0.679186 |
 
 | Dataset                          | Metric     | CrisperWhisper++ | Large-v2 | Large-v3 | WhisperTimestamped | WhisperX |
 |----------------------------------|------------|------------------|----------|----------|--------------------|----------|
