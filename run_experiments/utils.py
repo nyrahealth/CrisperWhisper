@@ -163,15 +163,17 @@ def setup_pipeline(
         torch_dtype=torch.float16,
     )
 
+def process_audio_files(audio_paths, pipe):
+    result = []
+    success_ids = []
+    for id,audio_path in enumerate(audio_paths):
+        try:
+            result.append(pipe(audio_path, return_timestamps="word"))
+            success_ids.append(id)
+        except Exception as e:
+            print(f"Error processing audio: {e}")
 
-def process_audio_files(
-    audio_paths: list[str], pipe: AutomaticSpeechRecognitionPipeline
-) -> Any:
-    try:
-        return pipe(audio_paths, return_timestamps="word")
-    except Exception as e:
-        print(f"Error processing audio: {e}")
-        return []
+    return result, success_ids
 
 
 def adjust_pauses(
