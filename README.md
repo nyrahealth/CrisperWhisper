@@ -16,13 +16,13 @@ One can see the superior performance of CrisperWhisper++ compared to the baselin
 
 | Dataset                          | Metric     | CrisperWhisper++ | Large-v2 | Large-v3 | WhisperTimestamped | WhisperX |
 |----------------------------------|------------|------------------|----------|----------|--------------------|----------|
-| ami_hf                           | F1 Score   | **0.90**         | 0.85     | 0.86     | 0.76               | 0.66     |
+| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/)                           | F1 Score   | **0.90**         | 0.85     | 0.86     | 0.76               | 0.66     |
 |                                  | Avg IOU    | **0.86**         | 0.74     | 0.77     | 0.75               | 0.60     |
-| cv_14                            | F1 Score   | **0.82**         | 0.51     | 0.60     | 0.53               | 0.69     |
+| [Common Voice](https://commonvoice.mozilla.org/en/datasets)                           | F1 Score   | **0.82**         | 0.51     | 0.60     | 0.53               | 0.69     |
 |                                  | Avg IOU    | **0.82**         | 0.74     | 0.76     | 0.73               | 0.64     |
-| synthetic_no_fillers_long_pauses | F1 Score   | **0.85**         | 0.57     | 0.69     | 0.43               | 0.73     |
+| Inhouse dataset including pauses | F1 Score   | **0.85**         | 0.57     | 0.69     | 0.43               | 0.73     |
 |                                  | Avg IOU    | **0.74**         | 0.66     | 0.68     | 0.59               | 0.67     |
-| timit                            | F1 Score   | 0.80             | 0.67     | 0.72     | 0.68               | **0.83** |
+| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.80             | 0.67     | 0.72     | 0.68               | **0.83** |
 |                                  | Avg IOU    | **0.83**         | 0.74     | 0.79     | 0.74               | 0.68     |
 
 
@@ -32,7 +32,12 @@ One can see the superior performance of CrisperWhisper++ compared to the baselin
 
 ![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_timit.png)
 
-This difference is much more pronounced in scenarios surrounding disfluencies. More plots and ablations can be found in the `run_experiments/plots` folder.
+This difference is much more pronounced in scenarios surrounding pauses or other disfluencies
+
+![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_synthetic_no_fillers_long_pauses.png)
+
+
+ More plots and ablations can be found in the `run_experiments/plots` folder.
 
 
 
