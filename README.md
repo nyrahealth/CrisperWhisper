@@ -13,7 +13,7 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 **Qualitative Performance Overvie**
 | Audio | Original Transcription | Improved Transcription |
 |-------|------------------------|------------------------|
-| <audio controls src="demo_audios/demo1.mp3"></audio> | Transcription text here | Improved transcription text here |
+| <audio controls src="demo_audios/demo1.mp4"></audio> | Transcription text here | Improved transcription text here |
 | <audio controls src="path/to/audio2.mp3"></audio> | Transcription text here | Improved transcription text here |
 
 
