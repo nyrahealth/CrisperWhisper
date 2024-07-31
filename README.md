@@ -9,6 +9,14 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 - 🔍 **Filler detection** Fillers like "um" and "uh" are canonically transcribed and detected with high accuracy
 - 🛡️ **Hallucination mitigation** minimize hallucinations
 
+
+**Qualitative Performance Overvie**
+| Audio | Original Transcription | Improved Transcription |
+|-------|------------------------|------------------------|
+| <audio controls src="demo_audios/demo1.mp3"></audio> | Transcription text here | Improved transcription text here |
+| <audio controls src="path/to/audio2.mp3"></audio> | Transcription text here | Improved transcription text here |
+
+
 ### Performance Overview
 
 One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and Avg IOU as defined in our Paper on three different Datasets.
