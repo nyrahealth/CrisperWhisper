@@ -10,14 +10,17 @@ This repository provides a extension of Whisper for fast automatic and verbatim 
 - 🛡️ **Hallucination mitigation** minimize hallucinations
 
 
-**Qualitative Performance Overvie**
+
+## 1. Performance Overview
+
+### Qualitative Performance Overview
+
 | Audio | Original Transcription | Improved Transcription |
 |-------|------------------------|------------------------|
-| <audio controls src="demo_audios/demo1.mp4"></audio> | Transcription text here | Improved transcription text here |
+| [audios/demo_audio1.mp3](https://github.com/user-attachments/assets/ddc43702-d013-4f91-82cd-b97c63a9acd5)| Transcription text here | Improved transcription text here |
 | <audio controls src="path/to/audio2.mp3"></audio> | Transcription text here | Improved transcription text here |
 
-
-### Performance Overview
+### Quantitative Performance Overview
 
 One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and Avg IOU as defined in our Paper on three different Datasets.
 
@@ -47,8 +50,6 @@ This difference is much more pronounced in scenarios surrounding pauses or other
 
  More plots and ablations can be found in the `run_experiments/plots` folder.
 
-
-
 <h2 align="left", id="highlights">New🚨</h2>
 
 - 1st place at [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim Datasets (ted, ami) 🏆
@@ -63,27 +64,27 @@ Tested for PyTorch 2.0, Python 3.10
 
 GPU execution requires the NVIDIA libraries cuBLAS 11.x and cuDNN 8.x to be installed on the system.
 
-### 1. Create Python3.10 environment
+### 1.1 Create Python3.10 environment
 
 `conda create --name crisperWhisper++ python=3.10`
 
 `conda activate crisperWhisper++`
 
-### 2. clone this repo
+### 1.2 clone this repo
 
 ```
-$ git clone https://github.com/myReha/crisperWhisper.git
+$ git clone https://github.com/nyrahealth/crisperWhisper.git
 $ cd crisperWhisper
 ```
 
-### 3. Install dependencies
+### 1.3 Install dependencies
 
 `pip install -r requirements.txt`
 
 You may also need to install ffmpeg, rust etc. Follow openAI instructions here https://github.com/openai/whisper#setup.
 
 
-## 4. Python usage  🐍
+## 2. Python usage  🐍
 
 ```python
 import os
@@ -124,15 +125,15 @@ result = pipe(sample, return_timestamps="word")
 print(result)
 ```
 
-## 5. Running the Streamlit App
+## 3. Running the Streamlit App
 
 To use the CrisperWhisper++ model with a user-friendly interface, you can run the provided Streamlit app. This app allows you to record or upload audio files for transcription and view the results with accurate word-level timestamps.
 
-### Prerequisites
+### 3.1 Prerequisites
 
 Make sure you have followed the [Setup ⚙️](#setup) instructions above and have the `crisperWhisper++` environment activated.
 
-### Steps to Run the Streamlit App
+### 3.2 Steps to Run the Streamlit App
 
 1. **Activate the Conda Environment**
 
@@ -165,7 +166,7 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
     http://localhost:8501
     ```
 
-### Features of the App
+### 3.3 Features of the App
 
 - **Record Audio**: Record audio directly using your microphone.
 - **Upload Audio**: Upload audio files in formats like WAV, MP3, or OGG.

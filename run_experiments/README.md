@@ -97,15 +97,3 @@ The structure for a labels.json file looks like this and includes timing informa
 ]
 ```
 When your dataset(s) are stored in the correct format you should be able to easily run the experiments as defined in the Segmentation_experiments.ipynb. Make sure to adjust your Experiment configuration accordingly and run your own experiments.
-
-
-
-
-
-
-
-
-
-
-
-
