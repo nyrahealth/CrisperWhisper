@@ -384,7 +384,7 @@ class PrecisionRecallMetrics:
         return PrecisionRecallMetrics(new_tp, new_fp, new_fn, new_ious)
 
     def __radd__(
-        self, other: "PrecisionRecallMetrics" | int
+        self, other: "PrecisionRecallMetrics" 
     ) -> "PrecisionRecallMetrics":
         if other == 0:
             return self

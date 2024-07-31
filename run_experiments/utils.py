@@ -11,6 +11,7 @@ import torchaudio
 from crisper_whisper import WhisperForConditionalGenerationWithAttentionLoss
 from evaluate_word_segmentation import (
     convert_timestamps_from_labels_json_to_TimestampedOutput,
+    TimestampedOutputs,
 )
 from transformers import (
     AutoConfig,
@@ -163,10 +164,11 @@ def setup_pipeline(
         torch_dtype=torch.float16,
     )
 
+
 def process_audio_files(audio_paths, pipe):
     result = []
     success_ids = []
-    for id,audio_path in enumerate(audio_paths):
+    for id, audio_path in enumerate(audio_paths):
         try:
             result.append(pipe(audio_path, return_timestamps="word"))
             success_ids.append(id)
@@ -177,7 +179,8 @@ def process_audio_files(audio_paths, pipe):
 
 
 def adjust_pauses(
-    predicted_transcripts_and_timestamps: list[Any], threshold: float = 0.08
+    predicted_transcripts_and_timestamps: list[TimestampedOutputs],
+    threshold: float = 0.08,
 ) -> list[Any]:
     new_predictions = []
     for element in predicted_transcripts_and_timestamps:
@@ -203,10 +206,10 @@ def configure_model_generation(
         processor: the WhisperProcessor
     """
     if "crisper" not in model_name:
-        model.generation_config.legacy = True
+        model.generation_config.legacy = False
         tokens_to_ignore_for_dtw = ["°"]
     else:
-        model.generation_config.legacy = False
+        model.generation_config.legacy = True
         tokens_to_ignore_for_dtw = ["?", "!", ",", "."]
 
     model.generation_config.forced_decoder_ids = processor.get_decoder_prompt_ids(
