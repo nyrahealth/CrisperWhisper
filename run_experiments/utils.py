@@ -10,8 +10,8 @@ import torch
 import torchaudio
 from crisper_whisper import WhisperForConditionalGenerationWithAttentionLoss
 from evaluate_word_segmentation import (
-    convert_timestamps_from_labels_json_to_TimestampedOutput,
     TimestampedOutputs,
+    convert_timestamps_from_labels_json_to_TimestampedOutput,
 )
 from transformers import (
     AutoConfig,

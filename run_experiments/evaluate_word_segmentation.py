@@ -1,11 +1,16 @@
 import copy
+import json
 import re
 import sys
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
+import attrs
+import matplotlib.pyplot as plt
+import numpy as np
+from loguru import logger
 from num2words import num2words
 
 # Path to the 'src' folder inside the 'transformers' submodule
@@ -36,15 +41,15 @@ class TextPreprocessor:
     """Class for preprocessing text files in a repeatable manner.
 
     Attributes:
-        preprocessing_methods (Optional[List[str]]): A list of strings, specifying pre-processing methods. The
+        preprocessing_methods (Optional[list[str]]): A list of strings, specifying pre-processing methods. The
             order of these methods is important as they are executed sequentially.
     """
 
     def __init__(
         self,
-        preprocessing_methods: Optional[List[str]] = None,
-        tokens_not_to_be_preprocessed: List[str] = [],
-        tokens_mapping: Dict[str, Any] = {},
+        preprocessing_methods: Optional[list[str]] = None,
+        tokens_not_to_be_preprocessed: list[str] = [],
+        tokens_mapping: dict[str, Any] = {},
         language: str = "en",
     ) -> None:
         self.preprocessing_methods = preprocessing_methods
@@ -58,7 +63,7 @@ class TextPreprocessor:
     def replace_nums_in_text(self, text: str) -> str:
         numbers = re.findall(r"[0-9]+", text)
         for number in numbers:
-            line = re.sub(number, num2words(number, self.language), text)
+            line = re.sub(number, num2words(number, lang=self.language), text)
             text = line
         return text
 
@@ -80,7 +85,7 @@ class TextPreprocessor:
 
     @staticmethod
     def replace_special_characters(
-        text: str, chars_to_replace: Optional[Dict[str, str]] = None
+        text: str, chars_to_replace: Optional[dict[str, str]] = None
     ) -> str:
         """Maps characters from keys to values."""
         if chars_to_replace is None:
@@ -90,7 +95,7 @@ class TextPreprocessor:
         return text
 
     @staticmethod
-    def phonemization_fixes(text: str, fixes: List[Callable]) -> str:  # type: ignore
+    def phonemization_fixes(text: str, fixes: list[Callable]) -> str:  # type: ignore
         for fix in fixes:
             text = fix(text)
         return text
@@ -113,7 +118,7 @@ class TextPreprocessor:
 
     @staticmethod
     def remove_unnecessary_spaces(text: str) -> str:
-        return re.sub(r"\s+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def remove_all_spaces(text: str) -> str:
@@ -183,11 +188,22 @@ DEFAULT_NORMALIZER = TextPreprocessor(
         "remove_punctuation",
         "replace_special_chars",
         "remove_non_english_chars",
-        "remove_all_spaces",
+        "remove_unnecessary_spaces",
     ],
     tokens_not_to_be_preprocessed=["[UH]", "[UM]"],
     language="en",
 )
+
+
+@attrs.define
+class EvaluationConfig:
+    collar: float = attrs.field(default=0.2)
+    transcripts_must_match: bool = attrs.field(default=True)
+    do_normalize: bool = attrs.field(default=True)
+    text_normalizer: Callable = attrs.field(default=DEFAULT_NORMALIZER)  # type: ignore
+    max_number_of_evals: int = attrs.field(default=-1)
+    pause_threshold: float = -1.0
+    pause_type: str = "implicit"
 
 
 class TimestampedOutput:
@@ -197,7 +213,7 @@ class TimestampedOutput:
         self.word = word
         self.start = start
         self.end = end
-        self.word_type = word_type
+        self.type = word_type
 
     def to_dict(self) -> dict[str, Any]:
         """Converts the timestamped output to a dictionary."""
@@ -205,7 +221,7 @@ class TimestampedOutput:
             "word": self.word,
             "start": self.start,
             "end": self.end,
-            "type": self.word_type,
+            "type": self.type,
         }
 
     @classmethod
@@ -219,7 +235,7 @@ class TimestampedOutput:
 
     def __str__(self) -> str:
         """String representation of the TimestampedOutput."""
-        return f'Word: "{self.word}", Start: {self.start}, End: {self.end}, Type: {self.word_type or "N/A"}'
+        return f'Word: "{self.word}", Start: {self.start}, End: {self.end}, Type: {self.type or "N/A"}'
 
 
 class TimestampedOutputs:
@@ -257,25 +273,51 @@ class TimestampedOutputs:
                 result.append(entry)
         return TimestampedOutputs(result)
 
-    def adjust_pauses(self, split_threshold: float = 0.06) -> None:
-        """Adjust the timing of pauses that are spaces (' ') and exceed the threshold."""
-        for i in range(1, len(self.entries) - 1):
-            entry = self.entries[i]
-            if entry.word == " ":
-                duration = entry.end - entry.start
+    def adjust_pauses(
+        self, split_threshold: float = 0.06, pause_type: str = "implicit"
+    ) -> None:
+        """Adjust the timing of pauses (either actual spaces or implicit pauses) and exceed the threshold."""
+        if split_threshold < 0:
+            logger.info(
+                f"Split threshold is negative ({split_threshold}), no pause adjustment was done."
+            )
+            return
+        if pause_type == "explicit":
+            for i in range(1, len(self.entries) - 1):
+                entry = self.entries[i]
+                if entry.word == " ":
+                    duration = entry.end - entry.start
+                    if duration > split_threshold:
+                        distribute = split_threshold / 2
+                    else:
+                        distribute = duration / 2
+                    # Check the previous and next words
+                    if self.entries[i - 1].word != " ":
+                        self.entries[i - 1].end += distribute
+                    if self.entries[i + 1].word != " ":
+                        self.entries[i + 1].start -= distribute
+
+                    # Update the current pause's timing
+                    entry.start += distribute
+                    entry.end -= distribute
+        elif pause_type == "implicit":
+            for current_entry, next_entry in zip(self.entries[:-1], self.entries[1:]):
+                duration = next_entry.start - current_entry.end
+                if duration < 0:
+                    raise ValueError(
+                        f"Timestamps overlap: Start of next entry {next_entry.start} is later than end of current entry {next_entry.start}"
+                    )
+
                 if duration > split_threshold:
                     distribute = split_threshold / 2
                 else:
                     distribute = duration / 2
-                # Check the previous and next words
-                if self.entries[i - 1].word != " ":
-                    self.entries[i - 1].end += distribute
-                if self.entries[i + 1].word != " ":
-                    self.entries[i + 1].start -= distribute
-
-                # Update the current pause's timing
-                entry.start += distribute
-                entry.end -= distribute
+                next_entry.start -= distribute
+                current_entry.end += distribute
+        else:
+            raise ValueError(
+                f"Pause type {pause_type} is not defined, must be 'implicit' or 'explicit'."
+            )
 
 
 def convert_timestamps_from_transformers_pipe_to_TimestampedOutput(
@@ -320,7 +362,18 @@ def convert_timestamps_from_labels_json_to_TimestampedOutput(
 def do_overlap(
     start1: float, end1: float, start2: float, end2: float, collar: float = 0.2
 ) -> bool:
-    overlap = abs(start1 - start2) <= collar and abs(end1 - end2) <= collar
+    if any([isinstance(val_, str) for val_ in [start1, start2, end1, end2, collar]]):
+        raise TypeError("All inputs must be float or int, not str.")
+    if start1 > end1 or start2 > end2:
+        raise ValueError(
+            "Invalid interval: start time must be less than or equal to end time"
+        )
+    if collar < 0:
+        raise ValueError("Collar must be non-negative")
+    overlap = (
+        round(abs(start1 - start2), 4) <= collar
+        and round(abs(end1 - end2), 4) <= collar
+    )
     return overlap
 
 
@@ -346,14 +399,22 @@ def get_precision_recall(tp: int, fp: int, fn: int) -> tuple[float, float]:
     return precision, recall
 
 
+def round_and_pad(number: float, decimals: int) -> str:
+    rounded_number = round(number, decimals)
+    formatted_number = f"{rounded_number:.{decimals}f}"
+    return formatted_number
+
+
 class PrecisionRecallMetrics:
     def __init__(
         self,
+        number_of_instances: int,
         tp: int,
         fp: int,
         fn: int,
         ious: list[float] = [],
     ) -> None:
+        self.number_of_instances = number_of_instances
         self.tp = tp
         self.fp = fp
         self.fn = fn
@@ -376,20 +437,27 @@ class PrecisionRecallMetrics:
         return sum(self.ious) / len(self.ious) if len(self.ious) else 0.0
 
     def __add__(self, other: "PrecisionRecallMetrics") -> "PrecisionRecallMetrics":
+        new_number_of_instances = self.number_of_instances + other.number_of_instances
         new_tp = self.tp + other.tp
         new_fp = self.fp + other.fp
         new_fn = self.fn + other.fn
 
         new_ious = self.ious + other.ious
-        return PrecisionRecallMetrics(new_tp, new_fp, new_fn, new_ious)
+        return PrecisionRecallMetrics(
+            new_number_of_instances, new_tp, new_fp, new_fn, new_ious
+        )
 
-    def __radd__(
-        self, other: "PrecisionRecallMetrics" 
-    ) -> "PrecisionRecallMetrics":
-        if other == 0:
+    def __radd__(self, other: "PrecisionRecallMetrics") -> "PrecisionRecallMetrics":
+        if other == 0:  # type: ignore
             return self
         else:
-            return self.__add__(other)  # type: ignore
+            return self.__add__(other)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.number_of_instances}, {self.tp}, {self.fp}, {self.fn}, {round_and_pad(self.precision,3)},"
+            f" {round_and_pad(self.recall,3)}, {round_and_pad(self.f1_score,3)}, {round_and_pad(self.avg_iou,3)}"
+        )
 
     def get_precision_recall(self) -> tuple[float, float]:
         tp = self.tp
@@ -412,11 +480,17 @@ class PrecisionRecallMetrics:
 def evaluate_segmentation(
     references: TimestampedOutputs,
     predictions: TimestampedOutputs,
-    collar: float,
-    text_normalizer: Callable = DEFAULT_NORMALIZER,  # type: ignore
+    eval_config: EvaluationConfig,
 ) -> PrecisionRecallMetrics:
-    references = references.clean_timestamped_outputs(text_normalizer)
-    predictions = predictions.clean_timestamped_outputs(text_normalizer)
+    collar = eval_config.collar
+    if eval_config.do_normalize:
+        references = references.clean_timestamped_outputs(eval_config.text_normalizer)
+        predictions = predictions.clean_timestamped_outputs(eval_config.text_normalizer)
+    if eval_config.pause_threshold > 0:
+        predictions.adjust_pauses(
+            split_threshold=eval_config.pause_threshold,
+            pause_type=eval_config.pause_type,
+        )
     tp = 0
     fn = 0
     ious = []
@@ -433,19 +507,18 @@ def evaluate_segmentation(
             pred_word = pred.word  # Lowercase for case-insensitive comparison
             pred_start, pred_end = pred.start, pred.end
 
-            if gt_word == pred_word and do_overlap(
-                gt_start, gt_end, pred_start, pred_end, collar=collar
-            ):
-                if not prediction_matched[
-                    i
-                ]:  # Ensure each prediction is only counted once
+            if (
+                gt_word == pred_word and not prediction_matched[i]
+            ):  # Ensure each prediction is only counted once
+                if do_overlap(gt_start, gt_end, pred_start, pred_end, collar=collar):
                     tp += 1
                     prediction_matched[i] = True
                     found_match = True
                     ious.append(calculate_iou(gt_start, gt_end, pred_start, pred_end))
 
                     break  # Move to the next ground truth word after finding a match
-
+                else:
+                    ious.append(0.0)
         if not found_match:
             fn += 1
 
@@ -453,6 +526,7 @@ def evaluate_segmentation(
     fp = prediction_matched.count(False)
 
     pr_metrics = PrecisionRecallMetrics(
+        number_of_instances=len(references.entries),
         tp=tp,
         fp=fp,
         fn=fn,
@@ -464,36 +538,271 @@ def evaluate_segmentation(
 def batch_evaluate_segmentation(
     references: list[tuple[str, TimestampedOutputs]],
     predictions: list[tuple[str, TimestampedOutputs]],
-    collar: float,
-    transcripts_must_match: bool = True,
-    text_normalizer: Callable = DEFAULT_NORMALIZER,  # type: ignore
-    max_number_of_evals: int = -1,
+    eval_config: EvaluationConfig,
 ) -> tuple[PrecisionRecallMetrics, list[PrecisionRecallMetrics]]:
+    text_normalizer = eval_config.text_normalizer
+    transcripts_must_match = eval_config.transcripts_must_match
+    max_number_of_evals = eval_config.max_number_of_evals
     if len(references) != len(predictions):
-        print(
+        logger.error(
             f"There need to be as many reference entities (currently {len(references)}) "
             f"as prediction entities (currently {len(predictions)})."
         )
-        return PrecisionRecallMetrics(tp=0, fp=0, fn=0, ious=[]), []
+        return (
+            PrecisionRecallMetrics(number_of_instances=0, tp=0, fp=0, fn=0, ious=[]),
+            [],
+        )
     seg_metrics_list = []
     eval_count = 0
     for ref, pred in zip(references, predictions):
-        # print(f"Normalized gt transcript  : {text_normalizer(ref[0])}")
-        # print(f"Normalized pred transcript: {text_normalizer(pred[0])}")
         if not transcripts_must_match or text_normalizer(ref[0]) == text_normalizer(
             pred[0]
         ):
             eval_count += 1
-            seg_metrics_list.append(
-                evaluate_segmentation(
-                    references=ref[1],
-                    predictions=pred[1],
-                    collar=collar,
-                    text_normalizer=text_normalizer,
+            evaluation = evaluate_segmentation(
+                references=ref[1],
+                predictions=pred[1],
+                eval_config=eval_config,
+            )
+            if transcripts_must_match and evaluation.fp != evaluation.fn:
+                logger.error(
+                    f"If transcripts match, also the number of false positives and false negatives must be equal."
+                    f" This not being the case indicates a problem with the timestamps, therefore skipped sample {ref[0]}."
                 )
+                continue
+            seg_metrics_list.append(evaluation)
+        else:
+            logger.debug(
+                f"Normalized transcripts don't match. \n Reference: {text_normalizer(ref[0])} "
+                f"\n Predicted: {text_normalizer(pred[0])}"
             )
         if max_number_of_evals != -1 and eval_count >= max_number_of_evals:
             break
     if not seg_metrics_list:
-        return PrecisionRecallMetrics(tp=0, fp=0, fn=0, ious=[]), []
+        return (
+            PrecisionRecallMetrics(number_of_instances=0, tp=0, fp=0, fn=0, ious=[]),
+            [],
+        )
     return sum(seg_metrics_list), seg_metrics_list  # type: ignore
+
+
+def convert_labels_json_to_list_of_TimestampedOutputs(
+    reference_labels_json_path: Path,
+    predicted_labels_json_path: Path,
+) -> tuple[list[Any], list[Any], list[TimestampedOutputs], list[TimestampedOutputs]]:
+    with reference_labels_json_path.open("r", encoding="utf-8") as labels_json:
+        reference_labels = json.load(labels_json)
+    with predicted_labels_json_path.open("r", encoding="utf-8") as labels_json:
+        predicted_labels = json.load(labels_json)
+
+    reference_dict = {label["audio"]: label for label in reference_labels}
+    predicted_dict = {label["audio"]: label for label in predicted_labels}
+
+    common_audio_keys = reference_dict.keys() & predicted_dict.keys()
+    reference_labels_sorted = [reference_dict[key] for key in sorted(common_audio_keys)]
+    predicted_labels_sorted = [predicted_dict[key] for key in sorted(common_audio_keys)]
+
+    # Check if the audio keys align
+    for ref_label, pred_label in zip(reference_labels_sorted, predicted_labels_sorted):
+        if ref_label["audio"] != pred_label["audio"]:
+            raise ValueError(
+                f"Audio keys do not align: {ref_label['audio']} vs {pred_label['audio']}"
+            )
+
+    reference_transcripts, reference_timestamped_outputs = zip(
+        *[
+            (
+                label["transcript"],
+                convert_timestamps_from_labels_json_to_TimestampedOutput(
+                    label["timings"]
+                ),
+            )
+            for label in reference_labels_sorted
+        ]
+    )
+    predicted_transcripts, predicted_timestamped_outputs = zip(
+        *[
+            (
+                label["transcript"],
+                convert_timestamps_from_labels_json_to_TimestampedOutput(
+                    label["timings"]
+                ),
+            )
+            for label in predicted_labels_sorted
+        ]
+    )
+    reference_timestamped_outputs_with_transcripts = list(
+        zip(reference_transcripts, reference_timestamped_outputs)
+    )
+    predicted_timestamped_outputs_with_transcripts = list(
+        zip(predicted_transcripts, predicted_timestamped_outputs)
+    )
+    return (
+        reference_timestamped_outputs_with_transcripts,
+        predicted_timestamped_outputs_with_transcripts,
+        list(reference_timestamped_outputs),
+        list(predicted_timestamped_outputs),
+    )
+
+
+def evaluate_segmentation_from_label_json(
+    reference_labels_json_path: Path,
+    predicted_labels_json_path: Path,
+    eval_config: EvaluationConfig,
+) -> PrecisionRecallMetrics:
+    (
+        reference_timestamped_outputs,
+        predicted_timestamped_outputs,
+        _,
+        _,
+    ) = convert_labels_json_to_list_of_TimestampedOutputs(
+        reference_labels_json_path=reference_labels_json_path,
+        predicted_labels_json_path=predicted_labels_json_path,
+    )
+    # Evaluate segmentation
+    evaluations, single_evaluations_list = batch_evaluate_segmentation(
+        references=reference_timestamped_outputs,
+        predictions=predicted_timestamped_outputs,
+        eval_config=eval_config,
+    )
+    logger.info(evaluations)
+    return evaluations
+
+
+def get_normalized_timestamped_output_from_labels_json(
+    eval_config: EvaluationConfig, prediction_path: Path, reference_path: Path
+) -> tuple[list[TimestampedOutputs], list[TimestampedOutputs]]:
+    (
+        _,
+        _,
+        reference_timestamped_outputs,
+        predicted_timestamped_outputs,
+    ) = convert_labels_json_to_list_of_TimestampedOutputs(
+        reference_labels_json_path=reference_path,
+        predicted_labels_json_path=prediction_path,
+    )
+    references_list = []
+    predictions_list = []
+    if eval_config.pause_threshold > 0:
+        for prediction in predicted_timestamped_outputs:
+            prediction.adjust_pauses(
+                split_threshold=eval_config.pause_threshold,
+                pause_type=eval_config.pause_type,
+            )
+    if eval_config.do_normalize:
+        for reference, prediction in zip(
+            reference_timestamped_outputs, predicted_timestamped_outputs
+        ):
+            reference = reference.clean_timestamped_outputs(eval_config.text_normalizer)
+            prediction = prediction.clean_timestamped_outputs(
+                eval_config.text_normalizer
+            )
+            references_list.append(reference)
+            predictions_list.append(prediction)
+    return predictions_list, references_list
+
+
+def analyze_time_shifts_and_durations(
+    reference_path: Path, prediction_path: Path, eval_config: EvaluationConfig
+) -> dict[str, Any]:
+    (
+        predictions_list,
+        references_list,
+    ) = get_normalized_timestamped_output_from_labels_json(
+        eval_config, prediction_path, reference_path
+    )
+    collar = eval_config.collar
+
+    start_shifts = []
+    end_shifts = []
+    duration_ratios = []
+    for references, predictions in zip(references_list, predictions_list):
+        for ref in references.entries:
+            for pred in predictions.entries:
+                if ref.word == pred.word and do_overlap(
+                    ref.start, ref.end, pred.start, pred.end, collar
+                ):
+                    start_shifts.append(pred.start - ref.start)
+                    end_shifts.append(pred.end - ref.end)
+                    ref_duration = ref.end - ref.start
+                    pred_duration = pred.end - pred.start
+                    if ref_duration > 0:
+                        duration_ratios.append(pred_duration / ref_duration)
+                    break
+
+    results = {
+        "start_shift_mean": np.mean(start_shifts),
+        "start_shift_std": np.std(start_shifts),
+        "end_shift_mean": np.mean(end_shifts),
+        "end_shift_std": np.std(end_shifts),
+        "duration_ratio_mean": np.mean(duration_ratios),
+        "duration_ratio_std": np.std(duration_ratios),
+        "start_shifts": start_shifts,
+        "end_shifts": end_shifts,
+        "duration_ratios": duration_ratios,
+    }
+
+    # Plot histograms and boxplots
+    fig, axs = plt.subplots(3, 2, figsize=(15, 15))
+    pause_str = (
+        ""
+        if eval_config.pause_threshold < 0
+        else f" with pause_threshold of {eval_config.pause_threshold} seconds."
+    )
+    fig.suptitle(
+        f"Comparison of {reference_path.name} (Ground Truth) vs {prediction_path.name} (Prediction)"
+        + pause_str
+    )
+
+    for i, (title, data) in enumerate(
+        [
+            ("Start Time Shifts", start_shifts),
+            ("End Time Shifts", end_shifts),
+            ("Duration Ratios", duration_ratios),
+        ]
+    ):
+        axs[i, 0].hist(data, bins=30)
+        axs[i, 0].set_title(f"{title} - Histogram")
+        axs[i, 0].set_xlabel("Seconds" if i < 2 else "Ratio")
+        axs[i, 0].set_ylabel("Frequency")
+
+        axs[i, 1].boxplot(data)
+        axs[i, 1].set_title(f"{title} - Boxplot")
+        axs[i, 1].set_ylabel("Seconds" if i < 2 else "Ratio")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    pause_str = (
+        ""
+        if eval_config.pause_threshold < 0
+        else f"_pause_threshold_{eval_config.pause_threshold}"
+    )
+    plot_path = (
+        Path(__file__).parent
+        / "data_preprocessing/plots/analysis/"
+        / f"{reference_path.stem}_vs_{prediction_path.stem}{pause_str}.png"
+    )
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_path)
+    logger.info(f"Saved plot to {plot_path}.")
+    return results
+
+
+def advanced_evaluation(
+    reference_path: Path, prediction_path: Path, eval_config: EvaluationConfig
+) -> None:
+    time_shift_duration_results = analyze_time_shifts_and_durations(
+        reference_path, prediction_path, eval_config
+    )
+    logger.info("Time Shift and Duration Analysis:")
+    logger.info(
+        f"  Start Time Shift: Mean = {time_shift_duration_results['start_shift_mean']:.3f}s,"
+        f" Std = {time_shift_duration_results['start_shift_std']:.3f}s"
+    )
+    logger.info(
+        f"  End Time Shift: Mean = {time_shift_duration_results['end_shift_mean']:.3f}s,"
+        f" Std = {time_shift_duration_results['end_shift_std']:.3f}s"
+    )
+    logger.info(
+        f"  Duration Ratio: Mean = {time_shift_duration_results['duration_ratio_mean']:.3f},"
+        f" Std = {time_shift_duration_results['duration_ratio_std']:.3f}"
+    )
