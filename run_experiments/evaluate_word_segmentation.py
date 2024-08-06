@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 import attrs
 import matplotlib.pyplot as plt
 import numpy as np
+from attr import define, field
 from loguru import logger
 from num2words import num2words
 
@@ -203,7 +204,7 @@ class EvaluationConfig:
     text_normalizer: Callable = attrs.field(default=DEFAULT_NORMALIZER)  # type: ignore
     max_number_of_evals: int = attrs.field(default=-1)
     pause_threshold: float = -1.0
-    pause_type: str = "implicit"
+    pause_type: str = "explicit"
 
 
 class TimestampedOutput:
@@ -274,7 +275,7 @@ class TimestampedOutputs:
         return TimestampedOutputs(result)
 
     def adjust_pauses(
-        self, split_threshold: float = 0.06, pause_type: str = "implicit"
+        self, split_threshold: float = 0.06, pause_type: str = "explicit"
     ) -> None:
         """Adjust the timing of pauses (either actual spaces or implicit pauses) and exceed the threshold."""
         if split_threshold < 0:
@@ -405,20 +406,13 @@ def round_and_pad(number: float, decimals: int) -> str:
     return formatted_number
 
 
+@define
 class PrecisionRecallMetrics:
-    def __init__(
-        self,
-        number_of_instances: int,
-        tp: int,
-        fp: int,
-        fn: int,
-        ious: list[float] = [],
-    ) -> None:
-        self.number_of_instances = number_of_instances
-        self.tp = tp
-        self.fp = fp
-        self.fn = fn
-        self.ious = ious
+    number_of_instances: int = field()
+    tp: int = field()
+    fp: int = field()
+    fn: int = field()
+    ious: list[float] = field(default=[])
 
     @property
     def precision(self) -> float:
@@ -441,9 +435,9 @@ class PrecisionRecallMetrics:
         new_tp = self.tp + other.tp
         new_fp = self.fp + other.fp
         new_fn = self.fn + other.fn
-
         new_ious = self.ious + other.ious
-        return PrecisionRecallMetrics(
+
+        return PrecisionRecallMetrics(  # type: ignore
             new_number_of_instances, new_tp, new_fp, new_fn, new_ious
         )
 
@@ -525,7 +519,7 @@ def evaluate_segmentation(
     # Count False Positives
     fp = prediction_matched.count(False)
 
-    pr_metrics = PrecisionRecallMetrics(
+    pr_metrics = PrecisionRecallMetrics(  # type: ignore
         number_of_instances=len(references.entries),
         tp=tp,
         fp=fp,
@@ -549,7 +543,13 @@ def batch_evaluate_segmentation(
             f"as prediction entities (currently {len(predictions)})."
         )
         return (
-            PrecisionRecallMetrics(number_of_instances=0, tp=0, fp=0, fn=0, ious=[]),
+            PrecisionRecallMetrics(  # type: ignore
+                number_of_instances=0,
+                tp=0,
+                fp=0,
+                fn=0,
+                ious=[],
+            ),
             [],
         )
     seg_metrics_list = []
@@ -580,7 +580,13 @@ def batch_evaluate_segmentation(
             break
     if not seg_metrics_list:
         return (
-            PrecisionRecallMetrics(number_of_instances=0, tp=0, fp=0, fn=0, ious=[]),
+            PrecisionRecallMetrics(  # type: ignore
+                number_of_instances=0,
+                tp=0,
+                fp=0,
+                fn=0,
+                ious=[],
+            ),
             [],
         )
     return sum(seg_metrics_list), seg_metrics_list  # type: ignore

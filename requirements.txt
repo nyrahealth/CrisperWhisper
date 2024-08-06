@@ -17,6 +17,7 @@ audioread==3.0.1
 av==11.0.0
 blinker==1.8.2
 cachetools==5.3.3
+cattrs
 certifi==2024.2.2
 cffi==1.16.0
 charset-normalizer==3.3.2
@@ -104,6 +105,17 @@ nltk==3.8.1
 num2words==0.5.13
 numba==0.59.1
 numpy==1.26.4
+nvidia-cublas-cu11==11.11.3.6
+nvidia-cuda-cupti-cu11==11.8.87
+nvidia-cuda-nvrtc-cu11==11.8.89
+nvidia-cuda-runtime-cu11==11.8.89
+nvidia-cudnn-cu11==8.7.0.84
+nvidia-cufft-cu11==10.9.0.58
+nvidia-curand-cu11==10.3.0.86
+nvidia-cusolver-cu11==11.4.1.48
+nvidia-cusparse-cu11==11.7.5.86
+nvidia-nccl-cu11==2.20.5
+nvidia-nvtx-cu11==11.8.86
 omegaconf==2.3.0
 onnxruntime==1.18.0
 openai-whisper==20231117
@@ -198,6 +210,7 @@ tornado==6.4
 tqdm==4.66.4
 traitlets==5.14.3
 transformers @ git+https://github.com/myreha/transformers.git@4bca573e5a697be5b9ee4a7a25eb638fb1eecade
+triton==2.3.0
 typer==0.12.3
 typing_extensions==4.11.0
 tzdata==2024.1
@@ -212,7 +225,7 @@ watchfiles==0.21.0
 wcwidth==0.2.13
 websockets==11.0.3
 whisper-timestamped==1.15.4
-whisperx @ git+https://github.com/m-bain/whisperx.git@f2da2f858e99e4211fe4f64b5f2938b007827e17
+whisperx
 xxhash==3.4.1
 yarl==1.9.4
 zipp==3.18.2

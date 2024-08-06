@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Union
 import whisper_timestamped as whisper_timestamped
 import whisperx
 from evaluate_word_segmentation import TimestampedOutput, TimestampedOutputs
+from loguru import logger
 from tqdm import tqdm
 
 
@@ -243,6 +244,7 @@ def transcribe_speech_files(
     outputs = []
     for audio_path in tqdm(audio_paths, desc="Transcribing audio files"):
         try:
+            logger.info(f"Transcribing audio file {audio_path}")
             outputs.append(transcribe_single_file(model=model, audio_path=audio_path))
         except KeyError:
             error_ids.append(audio_path)

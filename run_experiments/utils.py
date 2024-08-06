@@ -13,6 +13,7 @@ from evaluate_word_segmentation import (
     TimestampedOutputs,
     convert_timestamps_from_labels_json_to_TimestampedOutput,
 )
+from loguru import logger
 from transformers import (
     AutoConfig,
     AutomaticSpeechRecognitionPipeline,
@@ -109,16 +110,21 @@ def load_labels(
     labels_path = os.path.join(dataset_path, dataset, "labels.json")
     with open(labels_path, "r") as f:
         labels = json.load(f)
-    return [label for label in labels if label["split"] == split and "labels" in label][
-        :limit
-    ]
+    logger.info(f"Total number of labels in {labels_path}: {len(labels)}")
+    filtered_labels = [
+        label for label in labels if label["split"] == split and "timings" in label
+    ][:limit]
+    logger.info(
+        f"Number of loaded labels (split={split}, limit={limit}): {len(filtered_labels)}."
+    )
+    return filtered_labels
 
 
 def prepare_ground_truth(labels: list[dict[str, Any]]) -> list[tuple[str, Any]]:
     ground_truth = []
     for label in labels:
         gt_transcript = label["transcript"]
-        gt_timestamps = label.get("labels", [])
+        gt_timestamps = label.get("timings", [])
         gt_timestamps = convert_timestamps_from_labels_json_to_TimestampedOutput(
             gt_timestamps
         )
@@ -129,15 +135,17 @@ def prepare_ground_truth(labels: list[dict[str, Any]]) -> list[tuple[str, Any]]:
 def configure_model(
     model_path: str, device: str
 ) -> WhisperForConditionalGenerationWithAttentionLoss:
-    model = WhisperForConditionalGenerationWithAttentionLoss.from_pretrained(
-        model_path, ignore_mismatched_sizes=False
+    model: WhisperForConditionalGenerationWithAttentionLoss = (
+        WhisperForConditionalGenerationWithAttentionLoss.from_pretrained(
+            model_path, ignore_mismatched_sizes=False
+        )
     )
     model.to(device)
     model.eval()
     return model
 
 
-def get_processor_config_genConfig(
+def get_processor_config_and_genconfig(
     model_path: str,
 ) -> tuple[AutoProcessor, AutoConfig, GenerationConfig]:
     processor = AutoProcessor.from_pretrained(model_path)
@@ -153,33 +161,42 @@ def setup_pipeline(
     chunk_length_s: int = 30,
     batch_size: int = 60,
 ) -> AutomaticSpeechRecognitionPipeline:
+    dtype = torch.float32
+
+    if "cuda" in device:
+        dtype = torch.float16
+        model.half()
+
     return pipeline(
         "automatic-speech-recognition",
-        model=model.half(),
+        model=model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,
         chunk_length_s=chunk_length_s,
         batch_size=batch_size,
         device=device,
-        torch_dtype=torch.float16,
+        torch_dtype=dtype,
     )
 
 
-def process_audio_files(audio_paths, pipe):
+def process_audio_files(
+    audio_paths: list[str], pipe: AutomaticSpeechRecognitionPipeline
+) -> tuple[list[dict[str, Any]], list[int]]:
     result = []
     success_ids = []
     for id, audio_path in enumerate(audio_paths):
         try:
             result.append(pipe(audio_path, return_timestamps="word"))
+            logger.info(f"Processed audio file {audio_path}")
             success_ids.append(id)
         except Exception as e:
-            print(f"Error processing audio: {e}")
+            logger.error(f"Error processing audio: {e}")
 
     return result, success_ids
 
 
 def adjust_pauses(
-    predicted_transcripts_and_timestamps: list[TimestampedOutputs],
+    predicted_transcripts_and_timestamps: list[tuple[str, TimestampedOutputs]],
     threshold: float = 0.08,
 ) -> list[Any]:
     new_predictions = []
