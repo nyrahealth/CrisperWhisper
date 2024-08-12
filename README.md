@@ -1,90 +1,126 @@
 # CrisperWhisper++
 
-**Whisper** is an ASR model [developed by OpenAI](https://github.com/openai/whisper), trained on a large dataset of diverse audio. Whilst it does produces highly accurate transcriptions they do follow more of a intended style possibly omitting false starts and fillers. Further timestamps are inaccurate especially around pauses and speech disfluencies.
+**CrisperWhisper++** is an advanced variant of OpenAI's Whisper, designed for fast, precise, and verbatim speech recognition with accurate (**crisp**) word-level timestamps. Unlike the original Whisper, which tends to omit disfluencies and follows more of a intended transcription style, CrisperWhisper++ aims to transcribe every spoken word exactly as it is, including fillers, pauses, stutters and false starts.
 
-This repository provides a extension of Whisper for fast automatic and verbatim speech recognition with accurate word-level timestamps. We call our variant CrisperWhisper++.  We make the following improvements to Whisper:
+## Key Features
 
-- 🎯 **Accurate word-level timestamps** even around disfluencies and pauses using an adjusted tokenizer and training with a custom attention loss.
-- 📝 **Accurate verbatim transcription** In contrast to Whisper which follows more of a intended transcription style CrisperWhisper++ aims at transcribing every spoken word precisely
-- 🔍 **Filler detection** Fillers like "um" and "uh" are canonically transcribed and detected with high accuracy
-- 🛡️ **Hallucination mitigation** minimize hallucinations
+- 🎯 **Accurate Word-Level Timestamps**: Provides precise timestamps, even around disfluencies and pauses, by utilizing an adjusted tokenizer and a custom attention loss during training.
+- 📝 **Verbatim Transcription**: Transcribes every spoken word exactly as it is, including and differentiating fillers like "um" and "uh".
+- 🔍 **Filler Detection**: Detects and accurately transcribes fillers.
+- 🛡️ **Hallucination Mitigation**: Minimizes transcription hallucinations to enhance accuracy.
 
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Highlights](#highlights)
+- [Performance Overview](#1-performance-overview)
+  - [Qualitative Performance Overview](#11-qualitative-performance-overview)
+  - [Quantitative Performance Overview](#12-quantitative-performance-overview)
+    - [Transcription Performance](#transcription-performance)
+    - [Segmentation Performance](#segmentation-performance)
+- [Setup](#2-setup-⚙️)
+  - [Prerequisites](#21-prerequisites)
+  - [Environment Setup](#22-environment-setup)
+- [Python Usage](#3-python-usage-🐍)
+- [Running the Streamlit App](#4-running-the-streamlit-app)
+  - [Prerequisites](#41-prerequisites)
+  - [Steps to Run the App](#42-steps-to-run-the-app)
+  - [App Features](#43-app-features)
+- [License](#license)
+
+
+## Highlights
+
+- 🏆 **1st place** on the [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim datasets (TED, AMI).
+- 🎓 **Accepted at INTERSPEECH 2024**.
+- 📄 **Paper Drop**: Check out our [ArXiv preprint](...) for details on adjusting the tokenizer and training.
+- ✨ **New Feature**: Added AttentionLoss to further improve timestamp accuracy.
 
 
 ## 1. Performance Overview
 
-### Qualitative Performance Overview
+### 1.1 Qualitative Performance Overview
 
-| Audio | Original Transcription | Improved Transcription |
+| Audio | Whisper Large V3 | Crisper Whisper++ |
 |-------|------------------------|------------------------|
-| [audios/demo_audio1.mp3](https://github.com/user-attachments/assets/ddc43702-d013-4f91-82cd-b97c63a9acd5)| Transcription text here | Improved transcription text here |
-| <audio controls src="path/to/audio2.mp3"></audio> | Transcription text here | Improved transcription text here |
+| [Demo de 1](https://github.com/user-attachments/assets/ddc43702-d013-4f91-82cd-b97c63a9acd5) | Er war kein Genie, aber doch ein fehlender Ingegner. | Es ist zwar kein. Er ist zwar kein Genie, aber doch ein fähiger Ingenieur.|
+| [Demo de 2](path/to/audio2.mp3) | Leider müssen wir In diesen schweren Zeiten Auch unserem Tagesgeschäft nach gehen Der hier Vorgelegt Kultur Haushalt Der Ampel Regierung strebt An den Erfolg Der Union Zumindest Fortzuführen | Leider [UH] müssen wir in diesen [UH] schweren Zeiten auch [UH] unserem [UH] Tagesgeschäft nachgehen. Der hier [UH] vorgelegte [UH] Kulturhaushalt der [UH] Ampelregierung strebt an, den [UH] Erfolgskurs der Union [UH] zumindest [UH] fiskalisch fortzuführen. Es. |
+| [Demo de 3](path/to/audio2.mp3) | die über alle FR-Fraktionen gut Im Blick behalten sollten, auch weil sie teilweise sehr teuer sind. Aber nicht nur, weil sie teuer sind. Wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf | Die über alle Fr Fraktionen hinweg gut im [UH] Blick behalten sollten, auch weil sie teil teilweise sehr te teuer sind. Aber nicht nur, weil sie te teuer sind. Wir [UH] steigen mit diesem Ent Entwurf ein in die sogenannten Pand Pandemiebereitschaftsverträge. |
+| [Demo en 1](path/to/audio2.mp3) | alternative, you can get those Dr. Bronner's | Alternative is you can get like [UH] you have those, you know, those doctor Brahmer's. |
+| [Demo en 2](path/to/audio2.mp3) | influence natural surrounding? How does that influence the ecosystem? | Influence our [UM] our [UH] our natural surrounding. How does it influence our ecosystem? |
+| [Demo en 3](path/to/audio2.mp3) | And always find the place to park and you weren't long distance away from where you were trying to go. So,I remember that being fun and easy to do and there were nice places to go and good events to attend. Come downtown and you had the Warner Theater. | And always find a place on the street to park. And and it was it was easy and you weren't a long distance away from wherever it was that you were trying to go. So, I I I remember that being a lot of fun and easy to do and there were nice places to go and, [UM] i good events to attend. Come downtown and you had the Warner Theater and, [UM] |
 
-### Quantitative Performance Overview
+### 1.2 Quantitative Performance Overview
 
-One can see the superior performance of CrisperWhisper++ compared to the baseline variant when measuring F1 and Avg IOU as defined in our Paper on three different Datasets.
+#### Transcription Performance
 
+CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datasets that require more verbatim transcription, such as AMI and TED-LIUM.
 
-| Dataset                          | Metric     | CrisperWhisper++ | Large-v2 | Large-v3 | WhisperTimestamped | WhisperX |
-|----------------------------------|------------|------------------|----------|----------|--------------------|----------|
-| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/)                           | F1 Score   | **0.90**         | 0.85     | 0.86     | 0.76               | 0.66     |
-|                                  | Avg IOU    | **0.86**         | 0.74     | 0.77     | 0.75               | 0.60     |
-| [Common Voice](https://commonvoice.mozilla.org/en/datasets)                           | F1 Score   | **0.82**         | 0.51     | 0.60     | 0.53               | 0.69     |
-|                                  | Avg IOU    | **0.82**         | 0.74     | 0.76     | 0.73               | 0.64     |
-| Inhouse dataset including pauses | F1 Score   | **0.85**         | 0.57     | 0.69     | 0.43               | 0.73     |
-|                                  | Avg IOU    | **0.74**         | 0.66     | 0.68     | 0.59               | 0.67     |
-| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.80             | 0.67     | 0.72     | 0.68               | **0.83** |
-|                                  | Avg IOU    | **0.83**         | 0.74     | 0.79     | 0.74               | 0.68     |
+| Dataset            | CrisperWhisper++ | Whisper Large v3 | 
+|----------------------|:--------------:|:----------------:|
+| [AMI](https://huggingface.co/datasets/edinburghcstr/ami)                 | **8.72**       | 16.01            |    
+| [Earnings22](https://huggingface.co/datasets/revdotcom/earnings22)           | 12.37          | **11.3**        | 
+| [GigaSpeech](https://huggingface.co/datasets/speechcolab/gigaspeech)         | 10.27          | **10.02**        |     
+| [LibriSpeech clean](https://huggingface.co/datasets/openslr/librispeech_asr)   | **1.74**       | 2.03            |    
+| [LibriSpeech other](https://huggingface.co/datasets/openslr/librispeech_asr)   | 3.97           | **3.91**         |      
+| [SPGISpeech](https://huggingface.co/datasets/kensho/spgispeech)          | **2.71**           | 2.95        |     
+| [TED-LIUM](https://huggingface.co/datasets/LIUM/tedlium)             | **3.35**          | 3.9        |    
+| [VoxPopuli](https://huggingface.co/datasets/facebook/voxpopuli)           | **8.61**           | 9.52         |  
+| [CommonVoice](https://huggingface.co/datasets/mozilla-foundation/common_voice_9_0)       | **8.19**           | 9.67        |      
+| **Average WER**      | **6.66**       | 7.7         |  
 
+#### Segmentation Performance
 
+CrisperWhisper++ demonstrates superior performance in segmentation tasks, especially when measuring F1 Score and Avg IOU across multiple datasets.
 
- One can clearly see the superiority of CrisperWhisper++ vs. the baseline.
- Varying the collars on the [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) Dataset confirms that timestamps are improved quite significantly.
+| Dataset                          | Metric     | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 | WhisperTimestamped | WhisperX |
+|----------------------------------|------------|------------------|------------------|------------------|--------------------|----------|
+| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/)                           | F1 Score   | **0.90**         | 0.85             | 0.86             | 0.76               | 0.66     |
+|                                  | Avg IOU    | **0.86**         | 0.74             | 0.77             | 0.75               | 0.60     |
+| [Common Voice](https://commonvoice.mozilla.org/en/datasets)                           | F1 Score   | **0.82**         | 0.51             | 0.60             | 0.53               | 0.69     |
+|                                  | Avg IOU    | **0.82**         | 0.74             | 0.76             | 0.73               | 0.64     |
+| In-house Dataset (including pauses) | F1 Score   | **0.85**         | 0.57             | 0.69             | 0.43               | 0.73     |
+|                                  | Avg IOU    | **0.74**         | 0.66             | 0.68             | 0.59               | 0.67     |
+| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.80             | 0.67             | 0.72             | 0.68               | **0.83** |
+|                                  | Avg IOU    | **0.83**         | 0.74             | 0.79             | 0.74               | 0.68     |
 
-![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_timit.png)
+More plots and ablations can be found in the `run_experiments/plots` folder.
 
-This difference is much more pronounced in scenarios surrounding pauses or other disfluencies
+## 2. Setup ⚙️
 
-![Average F1 Score and IOU vs. Number of Heads](run_experiments/plots/Average_F1_vs_collar_dataset_synthetic_no_fillers_long_pauses.png)
+### 2.1 Prerequisites
 
+- **Python**: 3.10
+- **PyTorch**: 2.0
+- **NVIDIA Libraries**: cuBLAS 11.x and cuDNN 8.x (for GPU execution)
 
- More plots and ablations can be found in the `run_experiments/plots` folder.
+### 2.2 Environment Setup
 
-<h2 align="left", id="highlights">New🚨</h2>
+1. **Clone the Repository**:
+    ```bash
+    git clone https://github.com/nyrahealth/crisperWhisper.git
+    cd crisperWhisper
+    ```
 
-- 1st place at [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim Datasets (ted, ami) 🏆
-- _CrisperWhisper_ accepted at INTERSPEECH 2024
-- Paper drop🎓👨‍🏫! Please see our [ArxiV preprint](.....) regarding the details of adjusting the tokenizer and training.
-- Additonally added a AttentionLoss to further improve timestamp accuracy
-
-
-
-<h2 align="left" id="setup">Setup ⚙️</h2>
-Tested for PyTorch 2.0, Python 3.10
-
-GPU execution requires the NVIDIA libraries cuBLAS 11.x and cuDNN 8.x to be installed on the system.
-
-### 1.1 Create Python3.10 environment
-
-`conda create --name crisperWhisper++ python=3.10`
-
-`conda activate crisperWhisper++`
-
-### 1.2 clone this repo
-
-```
-$ git clone https://github.com/nyrahealth/crisperWhisper.git
-$ cd crisperWhisper
-```
-
-### 1.3 Install dependencies
-
-`pip install -r requirements.txt`
-
-You may also need to install ffmpeg, rust etc. Follow openAI instructions here https://github.com/openai/whisper#setup.
+2. **Create Python Environment**:
+    ```bash
+    conda create --name crisperWhisper++ python=3.10
+    conda activate crisperWhisper++
+    ```
 
 
-## 2. Python usage  🐍
+3. **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4. **Additional Installations**:
+    Follow OpenAI's instructions to install additional dependencies like `ffmpeg` and `rust`: [Whisper Setup](https://github.com/openai/whisper#setup).
+
+## 3. Python Usage 🐍
+
+Here's how to use CrisperWhisper++ in your Python scripts:
+
 
 ```python
 import os
@@ -111,7 +147,6 @@ pipe = pipeline(
     model=model,
     tokenizer=processor.tokenizer,
     feature_extractor=processor.feature_extractor,
-    max_new_tokens=800,
     chunk_length_s=30,
     batch_size=16,
     return_timestamps=True,
