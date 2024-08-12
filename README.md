@@ -31,10 +31,10 @@
 
 ## Highlights
 
-- 🏆 **1st place** on the [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim datasets (TED, AMI).
+- 🏆 **1st place** on the [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim datasets (TED, AMI) and overall.
 - 🎓 **Accepted at INTERSPEECH 2024**.
-- 📄 **Paper Drop**: Check out our [ArXiv preprint](...) for details on adjusting the tokenizer and training.
-- ✨ **New Feature**: Added AttentionLoss to further improve timestamp accuracy.
+- 📄 **Paper Drop**: Check out our [ArXiv preprint](...) for details and reasoning behind our tokenizer adjustment.
+- ✨ **New Feature**: Not mentioned in the paper is a added AttentionLoss to further improve timestamp accuracy. By specifically adding a loss to train the attention scores used for the DTW alignment using timestamped data we significantly boosted the alignment performance.
 
 
 
