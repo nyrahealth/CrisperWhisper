@@ -37,15 +37,18 @@
 - ✨ **New Feature**: Added AttentionLoss to further improve timestamp accuracy.
 
 
+
+
 ## 1. Performance Overview
 
 ### 1.1 Qualitative Performance Overview
 
+
 | Audio | Whisper Large V3 | Crisper Whisper++ |
 |-------|------------------------|------------------------|
-| [Demo de 1](https://github.com/user-attachments/assets/ddc43702-d013-4f91-82cd-b97c63a9acd5) | Er war kein Genie, aber doch ein fehlender Ingegner. | Es ist zwar kein. Er ist zwar kein Genie, aber doch ein fähiger Ingenieur.|
-| [Demo de 2](path/to/audio2.mp3) | Leider müssen wir In diesen schweren Zeiten Auch unserem Tagesgeschäft nach gehen Der hier Vorgelegt Kultur Haushalt Der Ampel Regierung strebt An den Erfolg Der Union Zumindest Fortzuführen | Leider [UH] müssen wir in diesen [UH] schweren Zeiten auch [UH] unserem [UH] Tagesgeschäft nachgehen. Der hier [UH] vorgelegte [UH] Kulturhaushalt der [UH] Ampelregierung strebt an, den [UH] Erfolgskurs der Union [UH] zumindest [UH] fiskalisch fortzuführen. Es. |
-| [Demo de 3](path/to/audio2.mp3) | die über alle FR-Fraktionen gut Im Blick behalten sollten, auch weil sie teilweise sehr teuer sind. Aber nicht nur, weil sie teuer sind. Wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf | Die über alle Fr Fraktionen hinweg gut im [UH] Blick behalten sollten, auch weil sie teil teilweise sehr te teuer sind. Aber nicht nur, weil sie te teuer sind. Wir [UH] steigen mit diesem Ent Entwurf ein in die sogenannten Pand Pandemiebereitschaftsverträge. |
+| [Demo de 1](https://github.com/user-attachments/assets/c8608ca8-5e02-4c4a-afd3-8f7c5bff75d5) | Er war kein Genie, aber doch ein fehlender Ingegner. | Es ist zwar kein. Er ist zwar kein Genie, aber doch ein fähiger Ingenieur.|
+| [Demo de 2](https://github.com/user-attachments/assets/c68414b1-0f84-441c-b39b-29069487edb6) | Leider müssen wir In diesen schweren Zeiten Auch unserem Tagesgeschäft nach gehen Der hier Vorgelegt Kultur Haushalt Der Ampel Regierung strebt An den Erfolg Der Union Zumindest Fortzuführen | Leider [UH] müssen wir in diesen [UH] schweren Zeiten auch [UH] unserem [UH] Tagesgeschäft nachgehen. Der hier [UH] vorgelegte [UH] Kulturhaushalt der [UH] Ampelregierung strebt an, den [UH] Erfolgskurs der Union [UH] zumindest [UH] fiskalisch fortzuführen. Es. |
+| [Demo de 3](https://github.com/user-attachments/assets/0c1ed60c-2829-47e4-b7ba-eb584b0a5e9a) | die über alle FR-Fraktionen gut Im Blick behalten sollten, auch weil sie teilweise sehr teuer sind. Aber nicht nur, weil sie teuer sind. Wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf ein, wir steigen mit diesem Endentwurf | Die über alle Fr Fraktionen hinweg gut im [UH] Blick behalten sollten, auch weil sie teil teilweise sehr te teuer sind. Aber nicht nur, weil sie te teuer sind. Wir [UH] steigen mit diesem Ent Entwurf ein in die sogenannten Pand Pandemiebereitschaftsverträge. |
 | [Demo en 1](path/to/audio2.mp3) | alternative, you can get those Dr. Bronner's | Alternative is you can get like [UH] you have those, you know, those doctor Brahmer's. |
 | [Demo en 2](path/to/audio2.mp3) | influence natural surrounding? How does that influence the ecosystem? | Influence our [UM] our [UH] our natural surrounding. How does it influence our ecosystem? |
 | [Demo en 3](path/to/audio2.mp3) | And always find the place to park and you weren't long distance away from where you were trying to go. So,I remember that being fun and easy to do and there were nice places to go and good events to attend. Come downtown and you had the Warner Theater. | And always find a place on the street to park. And and it was it was easy and you weren't a long distance away from wherever it was that you were trying to go. So, I I I remember that being a lot of fun and easy to do and there were nice places to go and, [UM] i good events to attend. Come downtown and you had the Warner Theater and, [UM] |
