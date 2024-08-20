@@ -215,13 +215,13 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 ## 5. How?
 
 
-We use the popular method of applying Dynamic Time Warping on the cross attention scores as detailed in the [paper](...). Leveraging our retokenization this allows us to detect pauses consistently.
-Since the quality of the timestamps is primairly dependent on this DTW cost matrix and threfore on the cross attentions we devise a loss on these cross attentions for the selected alignment heads.
-This loss is not included in the [paper](...) as we could not finish experiments and training in time for the submission deadline. Our public models however have been trained using this loss.
+We employ the popular Dynamic Time Warping (DTW) on the cross-attention scores, as detailed in our [paper](...) to derive word-level timestamps. By leveraging our retokenization process, this method allows us to consistently detect pauses. Given that the accuracy of the timestamps heavily depends on the DTW cost matrix and, consequently, on the quality of the cross-attentions, we developed a specialized loss function for the selected alignment heads to enhance precision.
+
+Although this loss function was not included in the original [paper](...) due to time constraints preventing the completion of experiments and training before the submission deadline, it has been used to train our publicly available models.
 Key Features of this loss are as follows:
 
 1. **Data Preparation**
-    - We used datasets with word-level timestamp annotations, such as AMI and TIMIT, but required additional timestamped data.
+    - We used datasets with word-level timestamp annotations, such as [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/) and [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)   , but required additional timestamped data.
     - To address this, we validated the alignment accuracy of several forced alignment tools using a small hand-labeled dataset.
     - Based on this validation, we chose the [PyTorch CTC aligner](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html) to generate more time-aligned data from the CommonVoice dataset.
     - Because the [PyTorch CTC aligner](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html) tends to overestimate pause durations, we applied the same pause-splitting method detailed in our [paper](...) to correct these errors. The effectiveness of this correction was confirmed using our hand-labeled dataset.
