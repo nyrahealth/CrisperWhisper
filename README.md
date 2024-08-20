@@ -125,13 +125,18 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 
 Here's how to use CrisperWhisper++ in your Python scripts:
 
+### 3.1 Usage with 🤗 transformers
+
 
 ```python
 import os
 import sys
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
 from datasets import load_dataset
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from utils import adjust_pauses_for_hf_pipeline_output
+
 
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -153,15 +158,38 @@ pipe = pipeline(
     feature_extractor=processor.feature_extractor,
     chunk_length_s=30,
     batch_size=16,
-    return_timestamps=True,
+    return_timestamps='word',
     torch_dtype=torch_dtype,
     device=device,
 )
 
 dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
 sample = dataset[0]["audio"]
-result = pipe(sample, return_timestamps="word")
-print(result)
+hf_pipeline_output = pipe(sample)
+crisper_whisper_result = adjust_pauses_for_hf_pipeline_output(hf_pipeline_output)
+print(crisper_whisper_result)
+```
+### 3.2 Usage with faster whisper
+
+We also provide a converted model to be compatible with [faster whisper](https://github.com/SYSTRAN/faster-whisper). However, due to the different implementation of the timestamp calculation in faster whisper or more precisely [CTranslate2](https://github.com/OpenNMT/CTranslate2/) the timestamp accuracy can not be guaranteed. 
+
+```python
+from faster_whisper import WhisperModel
+from datasets import load_dataset
+faster_whisper_model = '/home/azureuser/data2/models/faster_crisper_whisper_verbatim_timestamp_finetuned_de_en_swiss'
+
+# Initialize the Whisper model
+
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+torch_dtype = "float16" if torch.cuda.is_available() else "float32"
+model = WhisperModel(faster_whisper_model, device=device, compute_type="float32")
+dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
+sample = dataset[0]["audio"]
+
+segments, info = model.transcribe(sample['array'], beam_size=1, language='en', word_timestamps = True, without_timestamps= True)
+
+for segment in segments:
+    print(segment)
 ```
 
 ## 4. Running the Streamlit App
