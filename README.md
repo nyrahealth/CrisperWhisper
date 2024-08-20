@@ -23,9 +23,10 @@
   - [Environment Setup](#22-environment-setup)
 - [Python Usage](#3-python-usage-🐍)
 - [Running the Streamlit App](#4-running-the-streamlit-app)
-  - [Prerequisites](#41-prerequisites)
-  - [Steps to Run the App](#42-steps-to-run-the-app)
-  - [App Features](#43-app-features)
+    - [Prerequisites](#41-prerequisites)
+    - [Steps to Run the Streamlit App](#42-steps-to-run-the-streamlit-app)
+    - [Features of the App](#43-features-of-the-app)
+- [How](#5-how)
 - [License](#license)
 
 
@@ -57,7 +58,7 @@
 
 #### Transcription Performance
 
-CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datasets that require more verbatim transcription, such as AMI and TED-LIUM.
+CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datasets that have a more verbatim transcription style in the ground truth, such as AMI and TED-LIUM.
 
 | Dataset            | CrisperWhisper++ | Whisper Large v3 | 
 |----------------------|:--------------:|:----------------:|
@@ -163,15 +164,15 @@ result = pipe(sample, return_timestamps="word")
 print(result)
 ```
 
-## 3. Running the Streamlit App
+## 4. Running the Streamlit App
 
 To use the CrisperWhisper++ model with a user-friendly interface, you can run the provided Streamlit app. This app allows you to record or upload audio files for transcription and view the results with accurate word-level timestamps.
 
-### 3.1 Prerequisites
+### 4.1 Prerequisites
 
 Make sure you have followed the [Setup ⚙️](#setup) instructions above and have the `crisperWhisper++` environment activated.
 
-### 3.2 Steps to Run the Streamlit App
+### 4.2 Steps to Run the Streamlit App
 
 1. **Activate the Conda Environment**
 
@@ -204,9 +205,40 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
     http://localhost:8501
     ```
 
-### 3.3 Features of the App
+### 4.3 Features of the App
 
 - **Record Audio**: Record audio directly using your microphone.
 - **Upload Audio**: Upload audio files in formats like WAV, MP3, or OGG.
 - **Transcription**: Get accurate verbatim transcriptions including fillers
 - **Video Generation**: View the transcription with timestamps alongside a video with a black background.
+
+## 5. How?
+
+We use popular method of applying Dynamic Time Warping on the cross attention scores as detailed in the [paper](...). Leveraging our retokenization this allows us to detect pauses consistently.
+Since the quality of the timestamps is therefore highly dependent on these cross attentions we devise a loss on these cross attentions for the selected alignment heads.
+Key Features of this loss are as follows:
+
+1. **Data Preparation**
+    - We used datasets with word-level timestamp annotations, such as AMI and TIMIT, but required additional timestamped data.
+    - To address this, we validated the alignment accuracy of several forced alignment tools using a small hand-labeled dataset.
+    - Based on this validation, we chose the [PyTorch CTC aligner](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html) to generate more time-aligned data from the CommonVoice dataset.
+    - Because the [PyTorch CTC aligner](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html) tends to overestimate pause durations, we applied the same pause-splitting method detailed in our [paper](...) to correct these errors. The effectiveness of this correction was confirmed using our hand-labeled dataset.
+
+2. **Token-Word Alignment**
+    - Due to retokenization as detailed in our [paper](...), each token is either part of a word or a pause/space, but never both
+    - Therefore each token can be cleanly aligned to one word.
+
+3. **Ground Truth Cross-Attention**
+    - We define the cross-attention ground truth for tokens as the L2-normalized vector, where:
+        - A value of 1 indicates that the word is active according to the word-level ground truth timestamp.
+        - A value of 0 indicates that no attention should be paid.
+    - To account for small inaccuracies in the ground truth timestamps, we apply a linear interpolation of 4 steps (8 milliseconds) on both sides of the ground truth vector, transitioning smoothly from 0 to 1.
+
+4. **Loss Calculation**
+- The loss function is defined as `1 - cosine similarity`  between the predicted cross-attention vector (when predicting a token) and the ground truth cross-attention vector.
+- This loss is averaged across all predicted tokens and alignment heads.
+
+
+## License
+
+[Specify the license under which this project is released]
