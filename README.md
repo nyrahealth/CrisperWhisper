@@ -22,6 +22,8 @@
   - [Prerequisites](#21-prerequisites)
   - [Environment Setup](#22-environment-setup)
 - [Python Usage](#3-python-usage-🐍)
+  - [with transformers](#31-usage-with-🤗-transformers)
+  - [with faster whisper](#32-usage-with-faster-whisper)
 - [Running the Streamlit App](#4-running-the-streamlit-app)
     - [Prerequisites](#41-prerequisites)
     - [Steps to Run the Streamlit App](#42-steps-to-run-the-streamlit-app)
