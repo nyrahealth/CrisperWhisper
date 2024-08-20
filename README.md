@@ -274,7 +274,7 @@ Key Features of this loss are as follows:
 - Since most of our samples during training were shorter than 30 seconds we shift the audio sample and corresponding timestamp ground truth around with a 50% probability to mitigate the cross attentions ,,overfitting" to early positions of the encoder output.
 - If we have more than 40ms of silence (before or after shifting) we prepend the ground truth transcript ( and corresponding cross attention ground truth) with a space so the model has to accurately predict the starting time of the first word.
 - We use [WavLM](https://arxiv.org/abs/2110.13900) augmentations during Training adding random speech samples or noise to the audio wave to generally increase robustness of the transcription and stability of the alignment heads.
-- We clip ,,predicted" values in the cross attention vectors 4 seconds before and 4 seconds after the groundtruth word they belong to to 0. This is to decrease the dimensionality of the cross attention vector and emphasize the attention where it counts for the alignment.
+- We clip ,,predicted" values in the cross attention vectors 4 seconds before and 4 seconds after the groundtruth word they belong to to 0. This is to decrease the dimensionality of the cross attention vector and therefore emphasize the attention where it counts in the loss and ultimately for the alignment.
 
 
 ## License
