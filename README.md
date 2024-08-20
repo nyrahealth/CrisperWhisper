@@ -214,8 +214,10 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 
 ## 5. How?
 
-We use popular method of applying Dynamic Time Warping on the cross attention scores as detailed in the [paper](...). Leveraging our retokenization this allows us to detect pauses consistently.
-Since the quality of the timestamps is therefore highly dependent on these cross attentions we devise a loss on these cross attentions for the selected alignment heads.
+
+We use the popular method of applying Dynamic Time Warping on the cross attention scores as detailed in the [paper](...). Leveraging our retokenization this allows us to detect pauses consistently.
+Since the quality of the timestamps is primairly dependent on this DTW cost matrix and threfore on the cross attentions we devise a loss on these cross attentions for the selected alignment heads.
+This loss is not included in the [paper](...) as we could not finish experiments and training in time for the submission deadline. Our public models however have been trained using this loss.
 Key Features of this loss are as follows:
 
 1. **Data Preparation**
