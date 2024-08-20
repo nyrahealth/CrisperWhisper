@@ -215,7 +215,7 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 ## 5. How?
 
 
-We employ the popular Dynamic Time Warping (DTW) on the cross-attention scores, as detailed in our [paper](...) to derive word-level timestamps. By leveraging our retokenization process, this method allows us to consistently detect pauses. Given that the accuracy of the timestamps heavily depends on the DTW cost matrix and, consequently, on the quality of the cross-attentions, we developed a specialized loss function for the selected alignment heads to enhance precision.
+We employ the popular Dynamic Time Warping (DTW) on the Whisper cross-attention scores, as detailed in our [paper](...) to derive word-level timestamps. By leveraging our retokenization process, this method allows us to consistently detect pauses. Given that the accuracy of the timestamps heavily depends on the DTW cost matrix and, consequently, on the quality of the cross-attentions, we developed a specialized loss function for the selected alignment heads to enhance precision.
 
 Although this loss function was not included in the original [paper](...) due to time constraints preventing the completion of experiments and training before the submission deadline, it has been used to train our publicly available models.
 Key Features of this loss are as follows:
@@ -228,7 +228,7 @@ Key Features of this loss are as follows:
 
 2. **Token-Word Alignment**
     - Due to retokenization as detailed in our [paper](...), each token is either part of a word or a pause/space, but never both
-    - Therefore each token can be cleanly aligned to one word.
+    - Therefore each token can be cleanly aligned to a word OR a space/pause
 
 3. **Ground Truth Cross-Attention**
     - We define the cross-attention ground truth for tokens as the L2-normalized vector, where:
