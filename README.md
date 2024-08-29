@@ -78,7 +78,7 @@ CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datas
 #### Segmentation Performance
 
 CrisperWhisper++ demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
-The following table uses the metrics as defined in the paper. For this table we used a collar of 50ms. Heads for each Model were selected using the method described in the [How](#5-how) section and the result attaining the highest F1 Score was choosen for each model using varying number of head.
+The following table uses the metrics as defined in the paper. For this table we used a collar of 50ms. Heads for each Model were selected using the method described in the [How](#5-how) section and the result attaining the highest F1 Score was choosen for each model using varying number of heads.
 
 | Dataset | Metric | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 |
 |---------|--------|------------------|------------------|------------------|
