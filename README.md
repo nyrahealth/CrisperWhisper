@@ -79,17 +79,14 @@ CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datas
 
 CrisperWhisper++ demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
 
-| Dataset                          | Metric     | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 | WhisperTimestamped | WhisperX |
-|----------------------------------|------------|------------------|------------------|------------------|--------------------|----------|
-| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/)                           | F1 Score   | **0.90**         | 0.85             | 0.86             | 0.76               | 0.66     |
-|                                  | Avg IOU    | **0.86**         | 0.74             | 0.77             | 0.75               | 0.60     |
-| [Common Voice](https://commonvoice.mozilla.org/en/datasets)                           | F1 Score   | **0.86**         | 0.59             | 0.65             | 0.53               | 0.69     |
-|                                  | Avg IOU    | **0.71**         | 0.43             | 0.49             | 0.73               | 0.64     |
-| In-house Dataset (including pauses) | F1 Score   | **0.85**         | 0.57             | 0.69             | 0.43               | 0.73     |
-|                                  | Avg IOU    | **0.74**         | 0.66             | 0.68             | 0.59               | 0.67     |
-| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.82             | 0.72             | 0.75             | 0.68               | **0.83** |
-|                                  | Avg IOU    | **0.83**         | 0.74             | 0.79             | 0.74               | 0.68     |
-
+| Dataset                          | Metric     | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 | 
+|----------------------------------|------------|------------------|------------------|------------------|
+| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/) | F1 Score   | **0.79**         | 0.63             | 0.66 | 
+|                                  | Avg IOU    | **0.67**         | 0.54             | 0.53             | 
+| [Common Voice](https://commonvoice.mozilla.org/en/datasets) | F1 Score   | **0.80**         | 0.42             | 0.48             | 
+|                                  | Avg IOU    | **0.70**         | 0.32             | 0.43             | 
+| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.69             | 0.40             | 0.54             | 
+|                                  | Avg IOU    | **0.56**         | 0.32             | 0.43             | 
 More plots and ablations can be found in the `run_experiments/plots` folder.
 
 ## 2. Setup ⚙️
