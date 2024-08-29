@@ -21,7 +21,7 @@
 - [Setup](#2-setup-⚙️)
   - [Prerequisites](#21-prerequisites)
   - [Environment Setup](#22-environment-setup)
-- [Python Usage](#3-python-usage-🐍)
+- [Usage](#3-usage)
   - [with transformers](#31-usage-with-🤗-transformers)
   - [with faster whisper](#32-usage-with-faster-whisper)
 - [Running the Streamlit App](#4-running-the-streamlit-app)
@@ -122,7 +122,7 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 4. **Additional Installations**:
     Follow OpenAI's instructions to install additional dependencies like `ffmpeg` and `rust`: [Whisper Setup](https://github.com/openai/whisper#setup).
 
-## 3. Python Usage 🐍
+## 3. Usage 
 
 Here's how to use CrisperWhisper++ in your Python scripts:
 
@@ -191,6 +191,14 @@ segments, info = model.transcribe(sample['array'], beam_size=1, language='en', w
 
 for segment in segments:
     print(segment)
+```
+
+### 3.3 Commandline usage
+
+To transcribe an audio file, use the following command:
+
+```bash
+python transcribe.py --f <path_to_audio_file>
 ```
 
 ## 4. Running the Streamlit App
