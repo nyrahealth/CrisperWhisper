@@ -78,6 +78,7 @@ CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datas
 #### Segmentation Performance
 
 CrisperWhisper++ demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
+The following table uses the metrics as defined in the paper. For this table we used a collar of 50ms. Heads for each Model were selected using the method described in the [How](#5-how) section and the result attaining the highest F1 Score was choosen for each model using varying number of head.
 
 | Dataset | Metric | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 |
 |---------|--------|------------------|------------------|------------------|
@@ -267,6 +268,10 @@ Key Features of this loss are as follows:
 4. **Loss Calculation**
 - The loss function is defined as `1 - cosine similarity`  between the predicted cross-attention vector (when predicting a token) and the ground truth cross-attention vector.
 - This loss is averaged across all predicted tokens and alignment heads.
+
+5 **Alignment Head selection**
+- To choose the heads for alignment we evaluated the alignment performance of each individual decoder attention head on the timestamped timit dataset.
+- We choose the 15 best performing heads and finetune them using our attention loss.
 
 5. **Training Details**
 - Since most of our samples during training were shorter than 30 seconds we shift the audio sample and corresponding timestamp ground truth around with a 50% probability to mitigate the cross attentions ,,overfitting" to early positions of the encoder output.
