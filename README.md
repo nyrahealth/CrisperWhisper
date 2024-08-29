@@ -79,14 +79,15 @@ CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datas
 
 CrisperWhisper++ demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
 
-| Dataset                          | Metric     | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 | 
-|----------------------------------|------------|------------------|------------------|------------------|
-| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/) | F1 Score   | **0.79**         | 0.63             | 0.66 | 
-|                                  | Avg IOU    | **0.67**         | 0.54             | 0.53             | 
-| [Common Voice](https://commonvoice.mozilla.org/en/datasets) | F1 Score   | **0.80**         | 0.42             | 0.48             | 
-|                                  | Avg IOU    | **0.70**         | 0.32             | 0.43             | 
-| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1)                            | F1 Score   | 0.69             | 0.40             | 0.54             | 
-|                                  | Avg IOU    | **0.56**         | 0.32             | 0.43             | 
+| Dataset | Metric | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 |
+|---------|--------|------------------|------------------|------------------|
+| [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/) | F1 Score | **0.79** | 0.63 | 0.66 |
+| | Avg IOU | **0.67** | 0.54 | 0.53 |
+| [Common Voice](https://commonvoice.mozilla.org/en/datasets) | F1 Score | **0.80** | 0.42 | 0.48 |
+| | Avg IOU | **0.70** | 0.32 | 0.43 |
+| [TIMIT](https://catalog.ldc.upenn.edu/LDC93S1) | F1 Score | **0.69** | 0.40 | 0.54 |
+| | Avg IOU | **0.56** | 0.32 | 0.43 |
+
 More plots and ablations can be found in the `run_experiments/plots` folder.
 
 ## 2. Setup ⚙️
