@@ -103,8 +103,8 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 
 1. **Clone the Repository**:
     ```bash
-    git clone https://github.com/nyrahealth/crisperWhisper.git
-    cd crisperWhisper
+    git clone https://github.com/nyrahealth/CrisperWhisper.git
+    cd CrisperWhisper
     ```
 
 2. **Create Python Environment**:
@@ -127,7 +127,11 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 Here's how to use CrisperWhisper in your Python scripts:
 
 ### 3.1 Usage with 🤗 transformers
+First make sure that you have a huggingface account and accept the licensing of the [model](https://huggingface.co/nyrahealth/CrisperWhisper). Grab you huggingface access token and login so you are certainly able to download the model.
 
+```bash
+huggingface-cli login
+``` 
 
 ```python
 import os
@@ -174,10 +178,15 @@ print(crisper_whisper_result)
 
 We also provide a converted model to be compatible with [faster whisper](https://github.com/SYSTRAN/faster-whisper). However, due to the different implementation of the timestamp calculation in faster whisper or more precisely [CTranslate2](https://github.com/OpenNMT/CTranslate2/) the timestamp accuracy can not be guaranteed. 
 
+First make sure that you have a huggingface account and accept the licensing of the [model](https://huggingface.co/nyrahealth/faster_CrisperWhisper). Grab you huggingface access token and login so you are certainly able to download the model.
+```bash
+huggingface-cli login
+``` 
+
 ```python
 from faster_whisper import WhisperModel
 from datasets import load_dataset
-faster_whisper_model = '/home/azureuser/data2/models/faster_crisper_whisper_verbatim_timestamp_finetuned_de_en_swiss'
+faster_whisper_model = 'nyrahealth/faster_CrisperWhisper'
 
 # Initialize the Whisper model
 
@@ -194,6 +203,12 @@ for segment in segments:
 ```
 
 ### 3.3 Commandline usage
+
+First make sure that you have a huggingface account and accept the licensing of the model. Grab you huggingface access token and login so you are certainly able to download the model.
+```bash
+    `huggingface-cli login
+ ```
+afterwards:
 
 To transcribe an audio file, use the following command:
 
@@ -287,6 +302,7 @@ Key Features of this loss are as follows:
 - We use [WavLM](https://arxiv.org/abs/2110.13900) augmentations during Training adding random speech samples or noise to the audio wave to generally increase robustness of the transcription and stability of the alignment heads.
 - We clip ,,predicted" values in the cross attention vectors 4 seconds before and 4 seconds after the groundtruth word they belong to to 0. This is to decrease the dimensionality of the cross attention vector and therefore emphasize the attention where it counts in the loss and ultimately for the alignment.
 - With a probability of 1% we use samples containing exclusively noise where the model has to return a empty prediction to improve hallucination.
+- The Model is trained in three stages, in the first stage we use around 10000 hours of audio to adjust Whisper to the new tokenizer. In the second stage we exclusively use high quality datasets that are transcribed in a verbatim fashion. Finally we continue training on this verbatim mixture and add the attention loss for another 6000 steps.
 
 
 ## License
