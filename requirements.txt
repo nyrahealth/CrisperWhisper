@@ -1,3 +1,9 @@
 torch
+torchaudio
 transformers
 accelerate
+scipy
+streamlit
+moviepy
+streamlit_mic_recorder
+librosa
