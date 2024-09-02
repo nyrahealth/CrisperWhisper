@@ -287,6 +287,7 @@ Key Features of this loss are as follows:
 - We use [WavLM](https://arxiv.org/abs/2110.13900) augmentations during Training adding random speech samples or noise to the audio wave to generally increase robustness of the transcription and stability of the alignment heads.
 - We clip ,,predicted" values in the cross attention vectors 4 seconds before and 4 seconds after the groundtruth word they belong to to 0. This is to decrease the dimensionality of the cross attention vector and therefore emphasize the attention where it counts in the loss and ultimately for the alignment.
 - With a probability of 1% we use samples containing exclusively noise where the model has to return a empty prediction to improve hallucination.
+- The Model is trained in three stages, in the first stage we use around 10000 hours of audio to adjust Whisper to the new tokenizer. In the second stage we exclusively use high quality datasets that are transcribed in a verbatim fashion. Finally we continue training on this verbatim mixture and add the attention loss for another 6000 steps.
 
 
 ## License
