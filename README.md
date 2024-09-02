@@ -177,7 +177,7 @@ We also provide a converted model to be compatible with [faster whisper](https:/
 ```python
 from faster_whisper import WhisperModel
 from datasets import load_dataset
-faster_whisper_model = '/home/azureuser/data2/models/faster_crisper_whisper_verbatim_timestamp_finetuned_de_en_swiss'
+faster_whisper_model = 'nyrahealth/faster_CrisperWhisper'
 
 # Initialize the Whisper model
 
