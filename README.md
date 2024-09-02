@@ -1,6 +1,6 @@
-# CrisperWhisper++
+# CrisperWhisper
 
-**CrisperWhisper++** is an advanced variant of OpenAI's Whisper, designed for fast, precise, and verbatim speech recognition with accurate (**crisp**) word-level timestamps. Unlike the original Whisper, which tends to omit disfluencies and follows more of a intended transcription style, CrisperWhisper++ aims to transcribe every spoken word exactly as it is, including fillers, pauses, stutters and false starts.
+**CrisperWhisper** is an advanced variant of OpenAI's Whisper, designed for fast, precise, and verbatim speech recognition with accurate (**crisp**) word-level timestamps. Unlike the original Whisper, which tends to omit disfluencies and follows more of a intended transcription style, CrisperWhisper aims to transcribe every spoken word exactly as it is, including fillers, pauses, stutters and false starts.
 
 ## Key Features
 
@@ -36,7 +36,7 @@
 
 - 🏆 **1st place** on the [OpenASR Leaderboard](https://huggingface.co/spaces/hf-audio/open_asr_leaderboard) in verbatim datasets (TED, AMI) and overall.
 - 🎓 **Accepted at INTERSPEECH 2024**.
-- 📄 **Paper Drop**: Check out our [ArXiv preprint](...) for details and reasoning behind our tokenizer adjustment.
+- 📄 **Paper Drop**: Check out our [paper](https://arxiv.org/abs/2408.16589) for details and reasoning behind our tokenizer adjustment.
 - ✨ **New Feature**: Not mentioned in the paper is a added AttentionLoss to further improve timestamp accuracy. By specifically adding a loss to train the attention scores used for the DTW alignment using timestamped data we significantly boosted the alignment performance.
 
 
@@ -46,7 +46,7 @@
 ### 1.1 Qualitative Performance Overview
 
 
-| Audio | Whisper Large V3 | Crisper Whisper++ |
+| Audio | Whisper Large V3 | Crisper Whisper |
 |-------|------------------------|------------------------|
 | [Demo de 1](https://github.com/user-attachments/assets/c8608ca8-5e02-4c4a-afd3-8f7c5bff75d5) | Er war kein Genie, aber doch ein fähiger Ingenieur. | Es ist zwar kein. Er ist zwar kein Genie, aber doch ein fähiger Ingenieur.|
 | [Demo de 2](https://github.com/user-attachments/assets/c68414b1-0f84-441c-b39b-29069487edb6) | Leider müssen wir in diesen schweren Zeiten auch unserem Tagesgeschäft nachgehen. Der hier vorgelegte Kulturhaushalt der Ampelregierung strebt an, den Erfolgskurs der Union zumindest fiskalisch fortzuführen. | Leider [UH] müssen wir in diesen [UH] schweren Zeiten auch [UH] unserem [UH] Tagesgeschäft nachgehen. Der hier [UH] vorgelegte [UH] Kulturhaushalt der [UH] Ampelregierung strebt an, den [UH] Erfolgskurs der Union [UH] zumindest [UH] fiskalisch fortzuführen. Es. |
@@ -60,9 +60,9 @@
 
 #### Transcription Performance
 
-CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datasets that have a more verbatim transcription style in the ground truth, such as AMI and TED-LIUM.
+CrisperWhisper significantly outperforms Whisper Large v3, especially on datasets that have a more verbatim transcription style in the ground truth, such as AMI and TED-LIUM.
 
-| Dataset            | CrisperWhisper++ | Whisper Large v3 | 
+| Dataset            | CrisperWhisper | Whisper Large v3 | 
 |----------------------|:--------------:|:----------------:|
 | [AMI](https://huggingface.co/datasets/edinburghcstr/ami)                 | **8.72**       | 16.01            |    
 | [Earnings22](https://huggingface.co/datasets/revdotcom/earnings22)           | 12.37          | **11.3**        | 
@@ -77,10 +77,10 @@ CrisperWhisper++ significantly outperforms Whisper Large v3, especially on datas
 
 #### Segmentation Performance
 
-CrisperWhisper++ demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
+CrisperWhisper demonstrates superior performance segmentation performance. This performance gap is especially pronounced around disfluencies and pauses.
 The following table uses the metrics as defined in the paper. For this table we used a collar of 50ms. Heads for each Model were selected using the method described in the [How](#5-how) section and the result attaining the highest F1 Score was choosen for each model using varying number of heads.
 
-| Dataset | Metric | CrisperWhisper++ | Whisper Large v2 | Whisper Large v3 |
+| Dataset | Metric | CrisperWhisper | Whisper Large v2 | Whisper Large v3 |
 |---------|--------|------------------|------------------|------------------|
 | [AMI IHM](https://groups.inf.ed.ac.uk/ami/corpus/) | F1 Score | **0.79** | 0.63 | 0.66 |
 | | Avg IOU | **0.67** | 0.54 | 0.53 |
@@ -109,8 +109,8 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 
 2. **Create Python Environment**:
     ```bash
-    conda create --name crisperWhisper++ python=3.10
-    conda activate crisperWhisper++
+    conda create --name crisperWhisper python=3.10
+    conda activate crisperWhisper
     ```
 
 
@@ -124,7 +124,7 @@ More plots and ablations can be found in the `run_experiments/plots` folder.
 
 ## 3. Usage 
 
-Here's how to use CrisperWhisper++ in your Python scripts:
+Here's how to use CrisperWhisper in your Python scripts:
 
 ### 3.1 Usage with 🤗 transformers
 
@@ -143,7 +143,7 @@ from utils import adjust_pauses_for_hf_pipeline_output
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-model_id = "/home/azureuser/laurin/code/research/output/crisper_whisper_timestamp_finetuned"
+model_id = "nyrahealth/CrisperWhisper"
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
     model_id, torch_dtype=torch_dtype, low_cpu_mem_usage=True, use_safetensors=True
@@ -203,19 +203,19 @@ python transcribe.py --f <path_to_audio_file>
 
 ## 4. Running the Streamlit App
 
-To use the CrisperWhisper++ model with a user-friendly interface, you can run the provided Streamlit app. This app allows you to record or upload audio files for transcription and view the results with accurate word-level timestamps.
+To use the CrisperWhisper model with a user-friendly interface, you can run the provided Streamlit app. This app allows you to record or upload audio files for transcription and view the results with accurate word-level timestamps.
 
 ### 4.1 Prerequisites
 
-Make sure you have followed the [Setup ⚙️](#setup) instructions above and have the `crisperWhisper++` environment activated.
+Make sure you have followed the [Setup ⚙️](#setup) instructions above and have the `crisperWhisper` environment activated.
 
 ### 4.2 Steps to Run the Streamlit App
 
 1. **Activate the Conda Environment**
 
-    Ensure you are in the `crisperWhisper++` environment:
+    Ensure you are in the `crisperWhisper` environment:
     ```sh
-    conda activate crisperWhisper++
+    conda activate crisperWhisper
     ```
 
 2. **Navigate to the App Directory**
@@ -225,14 +225,14 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 
 3. **Run the Streamlit App**
 
-    Use the following command to run the app. Make sure to replace `/path/to/your/model` with the actual path to your CrisperWhisper++ model directory:
+    Use the following command to run the app. Make sure to replace `/path/to/your/model` with the actual path to your CrisperWhisper model directory:
     ```sh
     streamlit run app.py -- --model_id /path/to/your/model
     ```
 
     For example:
     ```sh
-    streamlit run app.py -- --model_id /home/azureuser/laurin/code/research/output/crisper_whisper++
+    streamlit run app.py -- --model_id nyrahealth/CrisperWhisper
     ```
 
 4. **Access the App**
@@ -252,9 +252,9 @@ Make sure you have followed the [Setup ⚙️](#setup) instructions above and ha
 ## 5. How?
 
 
-We employ the popular Dynamic Time Warping (DTW) on the Whisper cross-attention scores, as detailed in our [paper](...) to derive word-level timestamps. By leveraging our retokenization process, this method allows us to consistently detect pauses. Given that the accuracy of the timestamps heavily depends on the DTW cost matrix and, consequently, on the quality of the cross-attentions, we developed a specialized loss function for the selected alignment heads to enhance precision.
+We employ the popular Dynamic Time Warping (DTW) on the Whisper cross-attention scores, as detailed in our [paper](https://arxiv.org/abs/2408.16589) to derive word-level timestamps. By leveraging our retokenization process, this method allows us to consistently detect pauses. Given that the accuracy of the timestamps heavily depends on the DTW cost matrix and, consequently, on the quality of the cross-attentions, we developed a specialized loss function for the selected alignment heads to enhance precision.
 
-Although this loss function was not included in the original [paper](...) due to time constraints preventing the completion of experiments and training before the submission deadline, it has been used to train our publicly available models.
+Although this loss function was not included in the original [paper](https://arxiv.org/abs/2408.16589) due to time constraints preventing the completion of experiments and training before the submission deadline, it has been used to train our publicly available models.
 Key Features of this loss are as follows:
 
 1. **Data Preparation**
@@ -264,7 +264,7 @@ Key Features of this loss are as follows:
     - Because the [PyTorch CTC aligner](https://pytorch.org/audio/main/tutorials/ctc_forced_alignment_api_tutorial.html) tends to overestimate pause durations, we applied the same pause-splitting method detailed in our [paper](...) to correct these errors. The effectiveness of this correction was confirmed using our hand-labeled dataset.
 
 2. **Token-Word Alignment**
-    - Due to retokenization as detailed in our [paper](...), each token is either part of a word or a pause/space, but never both
+    - Due to retokenization as detailed in our [paper](https://arxiv.org/abs/2408.16589), each token is either part of a word or a pause/space, but never both
     - Therefore each token can be cleanly aligned to a word OR a space/pause
 
 3. **Ground Truth Cross-Attention**
