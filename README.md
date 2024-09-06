@@ -206,7 +206,7 @@ for segment in segments:
 
 First make sure that you have a huggingface account and accept the licensing of the model. Grab you huggingface access token and login so you are certainly able to download the model.
 ```bash
-    `huggingface-cli login
+    huggingface-cli login
  ```
 afterwards:
 
