@@ -7,11 +7,20 @@ speculative decoding) or pure HuggingFace Transformers (portable torch).
 
 ## Models
 
-| Model | HuggingFace ID | Features |
-|-------|---------------|----------|
-| **CrisperWhisper 2** | `nyrahealth/CrisperWhisper2` | Verbatim + intended modes, hotwords, verbatimize, longform, word timings, speculative decoding (ct2) |
-| **CrisperWhisper 2 Turbo** | `nyrahealth/CrisperWhisper2-turbo` | Draft model for speculative decoding (4 decoder layers, ct2 only) |
+CrisperWhisper 2.0 ships in four sizes. Everywhere a model id is
+expected, the bare size name works as shorthand
+(`CrisperWhisperModel("turbo")`); the default is **large**.
+
+| Model | HuggingFace ID | Notes |
+|-------|---------------|-------|
+| **large** (default) | `nyralabs/CrisperWhisper2.0_large` | Best quality |
+| **turbo** | `nyralabs/CrisperWhisper2.0_turbo` | Fastest large-quality option (4 decoder layers); also the recommended speculative draft for `large` |
+| **medium** | `nyralabs/CrisperWhisper2.0_medium` | |
+| **small** | `nyralabs/CrisperWhisper2.0_small` | Smallest; useful as a speculative draft |
 | CrisperWhisper (v1) | `nyrahealth/CrisperWhisper` | Verbatim only, HuggingFace Transformers backend (deprecated) |
+
+All sizes support verbatim + intended modes, hotwords, verbatimize,
+longform, word timings, and speculative decoding (ct2 backend).
 
 ## Backends
 
@@ -90,21 +99,25 @@ docker run --gpus all nyrahealth/crisperwhisper \
 ```python
 from crisperwhisper import CrisperWhisperModel
 
-# backend="auto" (default) prefers ct2 when installed, else transformers
-model = CrisperWhisperModel("nyrahealth/CrisperWhisper2")
+# Defaults to nyralabs/CrisperWhisper2.0_large;
+# backend="auto" prefers ct2 when installed, else transformers
+model = CrisperWhisperModel()
 
 result = model.transcribe("audio.wav", language="en")
 print(result.text)
+
+# Or pick a size by shorthand:
+model = CrisperWhisperModel("turbo")
 ```
 
 ### Choosing a backend
 
 ```python
 # Force CTranslate2 (fast, supports speculative decoding)
-model = CrisperWhisperModel("nyrahealth/CrisperWhisper2", backend="ct2")
+model = CrisperWhisperModel("large", backend="ct2")
 
 # Force pure-torch Transformers (no speculative decoding)
-model = CrisperWhisperModel("nyrahealth/CrisperWhisper2", backend="transformers")
+model = CrisperWhisperModel("large", backend="transformers")
 
 # Word timings, hotwords, longform and hallucination repair all work the
 # same on either backend:
@@ -116,9 +129,9 @@ print(model.backend, [(w.word, w.start, w.end) for w in result.words][:5])
 
 ```python
 model = CrisperWhisperModel(
-    "nyrahealth/CrisperWhisper2",
+    "large",
     backend="ct2",
-    draft_model="nyrahealth/CrisperWhisper2-turbo",
+    draft_model="turbo",
 )
 
 result = model.transcribe("audio.wav", speculative_decoding=True)
@@ -358,8 +371,8 @@ When both are enabled, cross-attention is captured from **both** models
 
 ```python
 model = CrisperWhisperModel(
-    "nyrahealth/CrisperWhisper2",
-    draft_model="nyrahealth/CrisperWhisper2-turbo",
+    "large",
+    draft_model="turbo",
 )
 result = model.transcribe(
     "audio.wav",

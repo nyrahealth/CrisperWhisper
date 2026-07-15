@@ -6,14 +6,25 @@ from crisperwhisper import _nvidia_libs
 # hence the imports below the call.
 _nvidia_libs.preload()
 
-from crisperwhisper.model import CrisperWhisperModel  # noqa: E402
+from crisperwhisper.model import (  # noqa: E402
+    DEFAULT_MODEL,
+    OFFICIAL_MODELS,
+    CrisperWhisperModel,
+)
 from crisperwhisper.result import (  # noqa: E402
     TranscriptionResult,
     ChunkResult,
     WordTimestamp,
 )
 
-__all__ = ["CrisperWhisperModel", "TranscriptionResult", "ChunkResult", "WordTimestamp"]
+__all__ = [
+    "CrisperWhisperModel",
+    "TranscriptionResult",
+    "ChunkResult",
+    "WordTimestamp",
+    "DEFAULT_MODEL",
+    "OFFICIAL_MODELS",
+]
 __version__ = "0.1.1"
 
 
