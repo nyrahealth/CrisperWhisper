@@ -17,7 +17,10 @@ def test_default_is_large():
 
 
 def test_official_sizes():
-    assert set(OFFICIAL_MODELS) == {"large", "turbo", "medium", "small"}
+    assert set(OFFICIAL_MODELS) == {
+        "large", "turbo", "medium", "small",
+        "large_pro", "turbo_pro", "medium_pro", "small_pro",
+    }
     for size, repo in OFFICIAL_MODELS.items():
         assert repo == f"nyralabs/CrisperWhisper2.0_{size}"
 

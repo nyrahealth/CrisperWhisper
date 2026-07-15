@@ -39,6 +39,10 @@ On top of that:
   [Nyra Verbatim Speech Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
   leaderboard for disfluency F1 across ten languages, ahead of every
   closed-source alternative we tested.
+- **Seamless longform** — audio of any length, transcribed without the usual
+  chunk-boundary artifacts: each window continues from the words already
+  transcribed (*conditional continuation*), so there are no duplicated or
+  dropped words at the seams and no fragile timestamp-token bookkeeping.
 - **Production inference** — a CTranslate2 runtime with speculative decoding
   and built-in mitigation of Whisper's looping-hallucination failure mode.
 
@@ -84,14 +88,21 @@ Audio longer than 30 seconds is handled automatically (see
 downloads it from HuggingFace and, on the `ct2` backend, converts it once
 into a local cache.
 
-### Model sizes
+### Models
 
 | Shorthand | HuggingFace ID | Notes |
 |-----------|----------------|-------|
-| `"large"` (default) | `nyralabs/CrisperWhisper2.0_large` | Best quality |
+| `"large"` (default) | `nyralabs/CrisperWhisper2.0_large` | Best open quality |
 | `"turbo"` | `nyralabs/CrisperWhisper2.0_turbo` | Near-large quality, fastest; also the recommended speculative draft |
 | `"medium"` | `nyralabs/CrisperWhisper2.0_medium` | |
 | `"small"` | `nyralabs/CrisperWhisper2.0_small` | Smallest |
+| `"large_pro"` / `"turbo_pro"` / `"medium_pro"` / `"small_pro"` | `nyralabs/CrisperWhisper2.0_<size>_pro` | **Pro**: our best models — improved performance, trained on additional proprietary data |
+
+The standard models are released under a
+[non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
+and are available for commercial licensing. The **Pro** models are available
+under commercial license only — for both,
+[get in touch](https://www.nyra-labs.com/crisperwhisper).
 
 ### Faster inference: speculative decoding (ct2)
 
@@ -149,7 +160,14 @@ quantization, model conversion, and the result object.
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). `crisperwhisper/features.py` is vendored from
+**The inference code in this repository is MIT-licensed** (see
+[LICENSE](LICENSE)) — use it freely, commercially or otherwise.
+`crisperwhisper/features.py` is vendored from
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT, SYSTRAN).
-Model weights are licensed separately — see the
-[model cards](https://huggingface.co/nyralabs).
+
+**The model weights are not MIT.** They are released under the
+[Nyra Health Non-Commercial Research License](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md):
+free for research and other non-commercial use; any commercial use requires
+a commercial license. The Pro models are available under commercial license
+only. For commercial licensing of either,
+[contact Nyra](https://www.nyra-labs.com/crisperwhisper).

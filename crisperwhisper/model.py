@@ -29,9 +29,13 @@ SHORT_THRESHOLD_S = 30.0
 
 # Official CrisperWhisper 2.0 checkpoints. Bare size names are accepted as
 # shorthand everywhere a model id is expected: CrisperWhisperModel("turbo").
+# The *_pro variants are Nyra's best models (commercial license only).
 OFFICIAL_MODELS = {
     size: f"nyralabs/CrisperWhisper2.0_{size}"
-    for size in ("large", "turbo", "medium", "small")
+    for size in (
+        "large", "turbo", "medium", "small",
+        "large_pro", "turbo_pro", "medium_pro", "small_pro",
+    )
 }
 DEFAULT_MODEL = OFFICIAL_MODELS["large"]
 

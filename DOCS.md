@@ -18,14 +18,21 @@ expected, the bare size name works as shorthand
 
 | Model | HuggingFace ID | Notes |
 |-------|---------------|-------|
-| **large** (default) | `nyralabs/CrisperWhisper2.0_large` | Best quality |
+| **large** (default) | `nyralabs/CrisperWhisper2.0_large` | Best open quality |
 | **turbo** | `nyralabs/CrisperWhisper2.0_turbo` | Fastest large-quality option (4 decoder layers); also the recommended speculative draft for `large` |
 | **medium** | `nyralabs/CrisperWhisper2.0_medium` | |
 | **small** | `nyralabs/CrisperWhisper2.0_small` | Smallest; useful as a speculative draft |
+| **large_pro** / **turbo_pro** / **medium_pro** / **small_pro** | `nyralabs/CrisperWhisper2.0_<size>_pro` | Pro: Nyra's best models — improved performance, trained on additional proprietary data; commercial license only |
 | CrisperWhisper (v1) | `nyrahealth/CrisperWhisper` | Verbatim only, HuggingFace Transformers backend (deprecated) |
 
 All sizes support verbatim + intended modes, hotwords, verbatimize,
 longform, word timings, and speculative decoding (ct2 backend).
+
+The standard models are released under a
+[non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
+and are available for commercial licensing; the Pro models are available
+under commercial license only ([contact](https://www.nyra-labs.com/crisperwhisper)).
+The inference code in this repository is MIT — see [License](#license).
 
 ## Backends
 
@@ -877,4 +884,10 @@ interpolates unmatched words. Works on all backends.
 
 ## License
 
-MIT
+The inference code in this repository is **MIT** (see [LICENSE](LICENSE)).
+
+The **model weights are licensed separately**: the standard models under the
+[Nyra Health Non-Commercial Research License](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
+(non-commercial use; commercial licensing available), the Pro models under
+commercial license only. See the [README](README.md#license) and the
+[model cards](https://huggingface.co/nyralabs).
