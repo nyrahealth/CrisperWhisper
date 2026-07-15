@@ -452,6 +452,27 @@ class CrisperWhisperModel:
             max_new_tokens=max_new_tokens,
         )
 
+    def _warn_if_hotwords_unsupported(self, hotwords: list[str] | None) -> None:
+        """Warn when hotwords are passed to a model without hotword training.
+
+        Hotword boosting is trained into the Pro checkpoints only. The
+        standard models were never trained with hotword prompts, so passing
+        hotwords can degrade transcription rather than merely doing nothing.
+        """
+        if not hotwords or self._model_version != 2:
+            return
+        if "_pro" in str(self._model_path):
+            return
+        warnings.warn(
+            f"hotwords were passed, but '{self._model_path}' does not appear "
+            "to be a CrisperWhisper Pro model. Hotword boosting is only "
+            "trained into the Pro models; on standard models it is "
+            "unsupported and can degrade transcription. Remove the hotwords "
+            "argument, or license a Pro model: "
+            "https://www.nyra-labs.com/crisperwhisper",
+            UserWarning, stacklevel=3,
+        )
+
     def transcribe(
         self,
         audio: Union[str, Path, np.ndarray],
@@ -486,8 +507,10 @@ class CrisperWhisperModel:
         mode
             ``"verbatim"`` or ``"intended"`` (v2 only).
         hotwords
-            List of hotword/hint phrases to bias recognition toward
-            (v2 Pro models only; no effect on standard models).
+            List of hotword/hint phrases to bias recognition toward.
+            Pro models only: standard models were never trained with
+            hotword prompts, so passing hotwords can degrade
+            transcription and raises a ``UserWarning``.
         sr
             Sample rate when *audio* is a numpy array.
         longform_strategy
@@ -558,6 +581,7 @@ class CrisperWhisperModel:
         TranscriptionResult
         """
         suppress_tokens = _sanitize_suppress_tokens(suppress_tokens)
+        self._warn_if_hotwords_unsupported(hotwords)
         if self._model_version == 1:
             return self._transcribe_v1(
                 audio, language=language, mode=mode,
@@ -682,6 +706,7 @@ class CrisperWhisperModel:
         then decodes them together -- so the batching benefit is not limited
         to equal-length chunks.
         """
+        self._warn_if_hotwords_unsupported(hotwords)
         if self._model_version == 1:
             raise NotImplementedError(
                 "transcribe_dual() requires a CrisperWhisper v2 model "

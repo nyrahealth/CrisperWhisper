@@ -270,8 +270,11 @@ if you need tighter parity, at a speed cost.
 ### Hotwords (Pro models only)
 
 Guide the model with domain-specific vocabulary. Hotword boosting is
-trained into the **Pro models** only; on the standard models the
-`hotwords` argument has no effect on recognition.
+trained into the **Pro models** only. Do not pass `hotwords` to the
+standard models: they were never trained with hotword prompts, so it can
+degrade transcription; the package raises a `UserWarning` if you do.
+Pro models are available under commercial license
+([get in touch](https://www.nyra-labs.com/crisperwhisper)).
 
 ```python
 model = CrisperWhisperModel("large_pro")
