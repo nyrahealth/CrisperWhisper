@@ -486,7 +486,8 @@ class CrisperWhisperModel:
         mode
             ``"verbatim"`` or ``"intended"`` (v2 only).
         hotwords
-            List of hotword/hint phrases (v2 only).
+            List of hotword/hint phrases to bias recognition toward
+            (v2 Pro models only; no effect on standard models).
         sr
             Sample rate when *audio* is a numpy array.
         longform_strategy

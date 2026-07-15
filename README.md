@@ -97,7 +97,7 @@ into a local cache.
 | `"turbo"` | `nyralabs/CrisperWhisper2.0_turbo` | Near-large quality, fastest; also the recommended speculative draft |
 | `"medium"` | `nyralabs/CrisperWhisper2.0_medium` | |
 | `"small"` | `nyralabs/CrisperWhisper2.0_small` | Smallest |
-| `"large_pro"` / `"turbo_pro"` / `"medium_pro"` / `"small_pro"` | `nyralabs/CrisperWhisper2.0_<size>_pro` | **Pro**: our best models, with improved performance, trained on additional proprietary data |
+| `"large_pro"` / `"turbo_pro"` / `"medium_pro"` / `"small_pro"` | `nyralabs/CrisperWhisper2.0_<size>_pro` | **Pro**: our best models, with improved performance, hotword boosting, trained on additional proprietary data |
 
 The standard models are released under a
 [non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
@@ -125,7 +125,7 @@ Everything below works out of the box and is covered in depth in
 |--------|--------------|
 | `mode="verbatim" / "intended"` | Choose what-was-said vs. what-was-meant per call |
 | `word_timestamps=True` | Per-word start/end times from supervised cross-attention alignment |
-| `hotwords=[...]` | Bias recognition toward names and rare terms |
+| `hotwords=[...]` | Bias recognition toward names and rare terms (**Pro models only**) |
 | `model.transcribe_dual(...)` | Verbatim **and** intended in one pass (ct2) |
 | `model.verbatimize(audio, transcript)` | Insert real disfluencies into a trusted clean transcript |
 | `model.forced_align(audio, text)` | Timings for a transcript you already have |

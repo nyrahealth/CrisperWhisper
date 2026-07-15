@@ -22,11 +22,12 @@ expected, the bare size name works as shorthand
 | **turbo** | `nyralabs/CrisperWhisper2.0_turbo` | Fastest large-quality option (4 decoder layers); also the recommended speculative draft for `large` |
 | **medium** | `nyralabs/CrisperWhisper2.0_medium` | |
 | **small** | `nyralabs/CrisperWhisper2.0_small` | Smallest; useful as a speculative draft |
-| **large_pro** / **turbo_pro** / **medium_pro** / **small_pro** | `nyralabs/CrisperWhisper2.0_<size>_pro` | Pro: Nyra's best models, with improved performance, trained on additional proprietary data; commercial license only |
+| **large_pro** / **turbo_pro** / **medium_pro** / **small_pro** | `nyralabs/CrisperWhisper2.0_<size>_pro` | Pro: Nyra's best models, with improved performance, hotword boosting, trained on additional proprietary data; commercial license only |
 | CrisperWhisper (v1) | `nyrahealth/CrisperWhisper` | Verbatim only, HuggingFace Transformers backend (deprecated) |
 
-All sizes support verbatim + intended modes, hotwords, verbatimize,
-longform, word timings, and speculative decoding (ct2 backend).
+All sizes support verbatim + intended modes, verbatimize, longform, word
+timings, and speculative decoding (ct2 backend). Hotword boosting is a
+Pro-model feature.
 
 The standard models are released under a
 [non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
@@ -41,7 +42,7 @@ the `backend=` argument.
 
 | Capability | `ct2` (CTranslate2) | `transformers` |
 |------------|:-------------------:|:--------------:|
-| Verbatim / intended modes, hotwords, verbatimize | yes | yes |
+| Verbatim / intended modes, hotwords (Pro), verbatimize | yes | yes |
 | Word-level timestamps (Viterbi on cross-attention) | yes | yes |
 | Longform (continuation + LCS strategies) | yes | yes |
 | Hallucination mitigation (rewind/escape repair) | yes | yes |
@@ -133,7 +134,7 @@ model = CrisperWhisperModel("large", backend="ct2")
 # Force pure-torch Transformers (no speculative decoding)
 model = CrisperWhisperModel("large", backend="transformers")
 
-# Word timings, hotwords, longform and hallucination repair all work the
+# Word timings, longform and hallucination repair all work the
 # same on either backend:
 result = model.transcribe("audio.wav", word_timestamps=True)
 print(model.backend, [(w.word, w.start, w.end) for w in result.words][:5])
@@ -266,11 +267,14 @@ to the exact same single-mode rewind-and-escape repair, so repaired rows
 are identical to `transcribe()`). Use `compute_type` higher than `float16`
 if you need tighter parity, at a speed cost.
 
-### Hotwords
+### Hotwords (Pro models only)
 
-Guide the model with domain-specific vocabulary:
+Guide the model with domain-specific vocabulary. Hotword boosting is
+trained into the **Pro models** only; on the standard models the
+`hotwords` argument has no effect on recognition.
 
 ```python
+model = CrisperWhisperModel("large_pro")
 result = model.transcribe("audio.wav", hotwords=["HIPAA", "myocardial", "tachycardia"])
 ```
 
@@ -333,7 +337,7 @@ pass keeps word starts from ever going backwards across chunk
 boundaries.
 
 ```python
-# Verbatim mode + hotwords + word timestamps
+# Verbatim mode + hotwords (Pro model) + word timestamps
 result = model.transcribe(
     "interview.wav",
     mode="verbatim",
