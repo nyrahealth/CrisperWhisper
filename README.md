@@ -12,6 +12,10 @@ controllable, multilingual, and timed to the word.**
 [Models](https://huggingface.co/nyralabs) ·
 [Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
 
+<a href="https://www.nyra-labs.com/crisperwhisper">
+  <img src="https://img.shields.io/badge/%E2%96%B6%20%20TRY%20IT%20NOW-2563eb?style=for-the-badge" alt="Try it now">
+</a>
+
 Most speech-to-text systems never actually decide whether to write down what
 was *said* or what was *meant*. They inherit that choice from their training
 data and apply it inconsistently. CrisperWhisper 2.0 makes it an explicit,
