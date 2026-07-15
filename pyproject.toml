@@ -51,9 +51,14 @@ ct2 = [
     "nvidia-cublas-cu12; sys_platform == 'linux'",
 ]
 # HuggingFace Transformers backend (pure torch; no speculative decoding).
-transformers = ["transformers>=4.40", "torch>=2.0", "accelerate>=0.26"]
+# torch>=2.4: current transformers releases refuse older torch at runtime
+# ("Disabling PyTorch because PyTorch >= 2.4 is required"), and a
+# pre-existing torch 2.x would otherwise satisfy the extra and never get
+# upgraded. Note torch dropped Intel-mac wheels after 2.2; Intel-mac users
+# must hand-pick an older transformers/torch pair.
+transformers = ["transformers>=4.40", "torch>=2.4", "accelerate>=0.26"]
 # HF -> CT2 weight conversion (only needed to build CT2 models).
-convert = ["transformers>=4.40", "torch>=2.0"]
+convert = ["transformers>=4.40", "torch>=2.4"]
 # Convenience: install both backends.
 all = ["crisperwhisper[ct2,transformers]"]
 dev = ["crisperwhisper[all]", "pytest>=7.0"]
