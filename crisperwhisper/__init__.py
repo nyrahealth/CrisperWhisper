@@ -14,7 +14,7 @@ from crisperwhisper.result import (  # noqa: E402
 )
 
 __all__ = ["CrisperWhisperModel", "TranscriptionResult", "ChunkResult", "WordTimestamp"]
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 def check_speculative_support() -> None:
