@@ -1,9 +1,0 @@
-torch
-torchaudio
-git+https://github.com/nyrahealth/transformers.git@crisper_whisper
-accelerate
-scipy
-streamlit
-moviepy
-streamlit_mic_recorder
-librosa
