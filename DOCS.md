@@ -1,4 +1,4 @@
-# CrisperWhisper — Documentation
+# CrisperWhisper Documentation
 
 Complete reference for the `crisperwhisper` package. New here? Start with
 the [README](README.md) for a quick overview and quickstart, or the
@@ -22,7 +22,7 @@ expected, the bare size name works as shorthand
 | **turbo** | `nyralabs/CrisperWhisper2.0_turbo` | Fastest large-quality option (4 decoder layers); also the recommended speculative draft for `large` |
 | **medium** | `nyralabs/CrisperWhisper2.0_medium` | |
 | **small** | `nyralabs/CrisperWhisper2.0_small` | Smallest; useful as a speculative draft |
-| **large_pro** / **turbo_pro** / **medium_pro** / **small_pro** | `nyralabs/CrisperWhisper2.0_<size>_pro` | Pro: Nyra's best models — improved performance, trained on additional proprietary data; commercial license only |
+| **large_pro** / **turbo_pro** / **medium_pro** / **small_pro** | `nyralabs/CrisperWhisper2.0_<size>_pro` | Pro: Nyra's best models, with improved performance, trained on additional proprietary data; commercial license only |
 | CrisperWhisper (v1) | `nyrahealth/CrisperWhisper` | Verbatim only, HuggingFace Transformers backend (deprecated) |
 
 All sizes support verbatim + intended modes, hotwords, verbatimize,
@@ -32,7 +32,7 @@ The standard models are released under a
 [non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
 and are available for commercial licensing; the Pro models are available
 under commercial license only ([contact](https://www.nyra-labs.com/crisperwhisper)).
-The inference code in this repository is MIT — see [License](#license).
+The inference code in this repository is MIT (see [License](#license)).
 
 ## Backends
 
@@ -58,7 +58,7 @@ attention weights).
 
 ## Performance
 
-> Deep dive: [Measuring verbatimness — the Nyra Verbatim Speech Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
+> Deep dive: [Measuring verbatimness: the Nyra Verbatim Speech Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
 
 Benchmarked on NVIDIA L40 GPU, float16 precision, 30-second German
 parliamentary speech (Bundestag):
@@ -73,7 +73,7 @@ RTF = processing time / audio duration. Lower is better.
 
 ## Installation
 
-The core package installs **no inference backend** -- choose one (or both)
+The core package installs **no inference backend**. Choose one (or both)
 via extras:
 
 ```bash
@@ -87,10 +87,10 @@ CTranslate2 with speculative-decoding APIs.  `[transformers]` pulls in
 `torch` + `transformers`.
 
 `[ct2]` GPU support needs only an NVIDIA driver: the CUDA userspace
-libraries (cuBLAS 12) arrive via pip and are loaded automatically -- no
+libraries (cuBLAS 12) arrive via pip and are loaded automatically; no
 system CUDA installation or `LD_LIBRARY_PATH` setup. Wheels are Linux
 x86_64; on other platforms use `[transformers]`. Do **not** install
-`faster-whisper` (or upstream `ctranslate2`) alongside `[ct2]` -- upstream
+`faster-whisper` (or upstream `ctranslate2`) alongside `[ct2]`: upstream
 ctranslate2 overwrites the fork's files in site-packages.
 
 For first-time model conversion from HuggingFace format to CT2:
@@ -152,7 +152,7 @@ result = model.transcribe("audio.wav", speculative_decoding=True)
 ```
 
 By default `K` (tokens drafted per round) self-tunes to the audio
-(`speculative_k="auto"`) — see [Speculative Decoding](#speculative-decoding-ct2-backend-only)
+(`speculative_k="auto"`); see [Speculative Decoding](#speculative-decoding-ct2-backend-only)
 for fixed-K and tuning options. Speculative decoding requires the `ct2`
 backend; requesting it on the `transformers` backend emits a warning and
 falls back to normal decoding.
@@ -161,8 +161,8 @@ falls back to normal decoding.
 
 The original `nyrahealth/CrisperWhisper` is a plain Whisper model with a
 changed tokenizer (one explicit space token for sharper word timing).  It
-is still supported -- on the `transformers` backend, reusing the same
-Viterbi timing and hallucination-repair code as v2 -- but emits a
+is still supported (on the `transformers` backend, reusing the same
+Viterbi timing and hallucination-repair code as v2) but emits a
 `DeprecationWarning` on load.  Requires the `[transformers]` extra.
 
 ```python
@@ -174,12 +174,12 @@ for w in result.words:
 
 Differences from v2:
 
-- **Verbatim only** -- no intended mode, hotwords, verbatimize, or
+- **Verbatim only**: no intended mode, hotwords, verbatimize, or
   speculative decoding (each ignored with a warning).
 - **Word timings** use the explicit space token's cross-attention as the
   pause signal (`blank_source="space"`) instead of mel energy; the model's
   own `generation_config` alignment heads are used by default.
-- **No context-aware longform** -- audio longer than 30s is transcribed as
+- **No context-aware longform**: audio longer than 30s is transcribed as
   independent 30s windows (a warning is emitted).  Use CrisperWhisper 2 for
   seamless longform.
 
@@ -231,10 +231,10 @@ for w in verbatim.words:
 ```
 
 `transcribe_dual` returns one `TranscriptionResult` per requested mode, in
-the order given. It supports everything `transcribe` does — `hotwords`,
+the order given. It supports everything `transcribe` does: `hotwords`,
 `word_timestamps` (cross-attention captured inline during the shared pass,
 no extra forward), per-row `hallucination_mitigation`, and longform
-(`longform_strategy="continuation"` only) — and is roughly **1.9x faster
+(`longform_strategy="continuation"` only). It is roughly **1.9x faster
 than two separate `transcribe` calls** (measured ~1.86-1.90x on short and
 longform audio; the GPU has ~96% idle decode compute at batch=1, so the
 second row costs only ~4% more wall time).
@@ -260,7 +260,7 @@ bit-identical** in float16:
   borderline tokens/timings, but if you need byte-for-byte parity with
   `transcribe()` on long audio, run the modes separately.
 
-This is purely a floating-point batching artefact — it is **not** caused by
+This is purely a floating-point batching artefact; it is **not** caused by
 hallucination repair, which still runs per row (a row that loops falls back
 to the exact same single-mode rewind-and-escape repair, so repaired rows
 are identical to `transcribe()`). Use `compute_type` higher than `float16`
@@ -327,7 +327,7 @@ extraction in the CTranslate2 backend, then runs a Viterbi alignment
 (with mel-energy-derived blank states) to convert the per-token
 attention into word-level start/end seconds.  Works with all
 transcription modes (`verbatim` / `intended` / hotwords), with
-hallucination repair, and across continuation longform — chunk-local
+hallucination repair, and across continuation longform, where chunk-local
 timings are mapped to global audio seconds and a seam-monotonization
 pass keeps word starts from ever going backwards across chunk
 boundaries.
@@ -366,7 +366,7 @@ Notes:
 * `word_timestamps=True` **is** now supported together with
   `speculative_decoding=True` (see below).  It is still **not**
   implemented for `longform_strategy` values other than
-  `"continuation"` — the LCS-stitched strategies would need a per-chunk
+  `"continuation"`; the LCS-stitched strategies would need a per-chunk
   timing pass with an overlap merge rule, and that call still raises
   `NotImplementedError`.
 
@@ -380,7 +380,7 @@ When both are enabled, cross-attention is captured from **both** models
   `forward_step_greedy_with_attention`);
 * the always-verified token and any verifier **corrections** keep the
   **main model's** cross-attention (captured in the same batched verify
-  pass via the new `forward_batch_with_attention` primitive — no extra
+  pass via the new `forward_batch_with_attention` primitive, with no extra
   forward compute);
 * **rejected** draft tokens never contribute a row, so the attention
   matrix stays exactly 1-to-1 with the emitted tokens even across
@@ -399,8 +399,8 @@ result = model.transcribe(
 )
 ```
 
-Because two models' alignment heads are mixed — and the draft model's
-heads are usually less timing-accurate than the main model's — this path
+Because two models' alignment heads are mixed (and the draft model's
+heads are usually less timing-accurate than the main model's), this path
 emits a `UserWarning`.  Word **content** and ordering are unaffected
 (speculative decoding is output-preserving in strict mode); only the
 fine-grained start/end of words that came from accepted draft tokens may
@@ -458,7 +458,7 @@ and hold music:
    between their surrounding matched anchors, proportional to word length.
 
 Because every reference word is bounded by its two neighboring anchors, a word
-can never drift far -- there is no catastrophic desync, even on long
+can never drift far: there is no catastrophic desync, even on long
 conversational audio with multi-second pauses. The trade-off is that unmatched
 reference words get interpolated (approximate) times rather than direct
 acoustic onsets.
@@ -481,9 +481,9 @@ available:
 
 | Strategy | How it works | Trade-offs |
 |----------|-------------|------------|
-| `"continuation"` (default) | Sequential — each chunk's decoder prompt includes the last K confirmed words from the previous chunk. | Best quality; cannot be parallelised. |
-| `"chunked_lcs"` | Independent — all chunks decoded separately, then stitched by longest-common-subsequence at word level in the overlap region. | Parallelisable; slightly lower accuracy at boundaries. |
-| `"token_lcs"` | Independent — like `chunked_lcs` but stitching happens at the token level (HuggingFace pipeline style). | Parallelisable; token-level alignment. |
+| `"continuation"` (default) | Sequential: each chunk's decoder prompt includes the last K confirmed words from the previous chunk. | Best quality; cannot be parallelised. |
+| `"chunked_lcs"` | Independent: all chunks decoded separately, then stitched by longest-common-subsequence at word level in the overlap region. | Parallelisable; slightly lower accuracy at boundaries. |
+| `"token_lcs"` | Independent: like `chunked_lcs` but stitching happens at the token level (HuggingFace pipeline style). | Parallelisable; token-level alignment. |
 
 ```python
 # Continuation context (default, best quality)
@@ -535,7 +535,7 @@ and are passed through the `transcribe()` API.
 
 #### Temperature fallback (collapse recovery)
 
-Greedy decoding occasionally *collapses* on a chunk — the model emits a
+Greedy decoding occasionally *collapses* on a chunk: the model emits a
 confident but near-empty transcription (e.g. `"Meanwhile."` for 30 s of
 dense speech).  With `temperature_fallback=True` (default, both backends)
 each chunk is coverage-checked: when speech clearly fills the audio but
@@ -545,7 +545,7 @@ chunk is re-decoded with an escalating temperature ladder
 that covers the audio wins.  See `crisperwhisper/fallback.py`.
 
 Note: the fallback needs the engine's `generate_sampled` primitive, which
-the speculative decoder does not expose — with
+the speculative decoder does not expose, so with
 `speculative_decoding=True` the fallback is inactive (transcription
 proceeds normally without it).
 
@@ -585,24 +585,24 @@ value depends on how often the draft is correct (its acceptance rate),
 which varies by audio. You don't have to tune it:
 
 ```python
-# Self-tuning (default) -- the model finds a good K on its own:
+# Self-tuning (default): the model finds a good K on its own:
 model = CrisperWhisperModel(..., speculative_k="auto")
 
-# Fixed K -- pin it to a constant:
+# Fixed K: pin it to a constant:
 model = CrisperWhisperModel(..., speculative_k=10)
 ```
 
-- **`"auto"` (default)** — K self-tunes to the draft's acceptance with an
+- **`"auto"` (default)**: K self-tunes to the draft's acceptance with an
   AIMD controller (additive-increase / additive-decrease, as in HF assisted
   decoding): a round where every drafted token is accepted bumps K up by two;
   any rejection nudges it down by one. The controller's K **persists across
   chunks** of a transcription (and is re-seeded at the start of each new
-  audio), so over a file it converges to the acceptance-driven equilibrium —
+  audio), so over a file it converges to the acceptance-driven equilibrium,
   roughly the K at which about a third of the rounds fully accept. The +2/−1
   up-bias keeps K near the cap when the draft's acceptance is high (where the
   wall-time optimum sits for `large-v2` + `turbo`) while still backing off on
   low-acceptance audio. K is capped at 16; no window or seed needs hand-tuning.
-- **`<int>`** — a fixed K (no adaptation).
+- **`<int>`**: a fixed K (no adaptation).
 
 Strict speculative decoding is **output-preserving regardless of K**, so
 `K` only affects throughput, never the transcript. In benchmarks on
@@ -660,7 +660,7 @@ detector (`find_token_loop`) and thresholds.
 
 #### Per-ngram thresholds
 
-Different n-gram sizes use different repetition thresholds — short
+Different n-gram sizes use different repetition thresholds: short
 unigrams require more repeats before triggering a repair than long
 phrases which are almost never genuine speech:
 
@@ -694,10 +694,10 @@ gen_ids, n_repairs = generate_with_repair(
 
 Two additional strategies exist in `crisperwhisper/hallucination.py`:
 
-- **`generate_with_blocking`** — real-time n-gram blocker that bans the
+- **`generate_with_blocking`**: real-time n-gram blocker that bans the
   loop-starting token at each decoding step.  Used internally when
   step-level control is needed.
-- **`find_token_loop`** — post-hoc scanner used as a safety net after
+- **`find_token_loop`**: post-hoc scanner used as a safety net after
   speculative decoding (where step-by-step blocking is not possible).
 
 ## Result Object
@@ -761,8 +761,8 @@ CrisperWhisperModel          (public API; selects backend)
 ```
 
 The shared algorithms (prompt building, word timing, longform, repair,
-temperature fallback) depend only on a small engine interface --
-documented as `crisperwhisper.interfaces.EngineProtocol` -- so both
+temperature fallback) depend only on a small engine interface,
+documented as `crisperwhisper.interfaces.EngineProtocol`, so both
 `CT2Engine` and `TransformersEngine` run them unchanged.
 
 ## API Reference
