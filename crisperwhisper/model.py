@@ -1,7 +1,7 @@
 """CrisperWhisperModel — the main public API for CrisperWhisper inference.
 
 Supports both CrisperWhisper v1 (``nyrahealth/CrisperWhisper``) and v2
-(``nyrahealth/CrisperWhisper2``) models.  The backend is selected
+(``nyralabs/CrisperWhisper2.0_<size>``) models.  The backend is selected
 automatically:
 
 - **v1**: HuggingFace Transformers (verbatim only, word-level timestamps)
@@ -27,10 +27,23 @@ logger = logging.getLogger(__name__)
 
 SHORT_THRESHOLD_S = 30.0
 
+# Official CrisperWhisper 2.0 checkpoints. Bare size names are accepted as
+# shorthand everywhere a model id is expected: CrisperWhisperModel("turbo").
+OFFICIAL_MODELS = {
+    size: f"nyralabs/CrisperWhisper2.0_{size}"
+    for size in ("large", "turbo", "medium", "small")
+}
+DEFAULT_MODEL = OFFICIAL_MODELS["large"]
+
+
+def resolve_model_id(name_or_path: str) -> str:
+    """Expand a size shorthand to its official model id; pass through others."""
+    return OFFICIAL_MODELS.get(name_or_path, name_or_path)
+
 _V1_DEPRECATION = (
     "You are using the legacy CrisperWhisper v1 model. It is deprecated and "
     "will NOT be supported in the next release. Please migrate to "
-    "CrisperWhisper 2.0 (nyrahealth/CrisperWhisper2), which has much better "
+    "CrisperWhisper 2.0 (nyralabs/CrisperWhisper2.0_large), which has much better "
     "verbatim performance and also adds 3-5x faster inference, intended mode, "
     "hotwords, verbatimize, longform, and speculative decoding. "
     "See https://github.com/nyrahealth/CrisperWhisper for details."
@@ -91,10 +104,15 @@ class CrisperWhisperModel:
     Parameters
     ----------
     model_name_or_path
-        HuggingFace model ID or local directory.
+        HuggingFace model ID, local directory, or one of the size
+        shorthands ``"large"``, ``"turbo"``, ``"medium"``, ``"small"``
+        for the official ``nyralabs/CrisperWhisper2.0_<size>``
+        checkpoints.  Defaults to ``nyralabs/CrisperWhisper2.0_large``.
 
+        - ``"nyralabs/CrisperWhisper2.0_<size>"`` — v2, CTranslate2 or
+          Transformers backend
         - ``"nyrahealth/CrisperWhisper"`` — v1, HF Transformers backend
-        - ``"nyrahealth/CrisperWhisper2"`` — v2, CTranslate2 or Transformers
+          (deprecated)
 
     backend
         Which v2 inference backend to use: ``"ct2"`` (CTranslate2, fast,
@@ -111,7 +129,9 @@ class CrisperWhisperModel:
     device_index
         GPU index when using CUDA.
     draft_model
-        Optional draft model for speculative decoding (v2 only).
+        Optional draft model for speculative decoding (v2 only).  Accepts
+        the same size shorthands as ``model_name_or_path`` (a common
+        pairing is ``CrisperWhisperModel("large", draft_model="small")``).
     speculative_k
         Speculative-decoding K policy (v2 only).  ``"auto"`` (default)
         self-tunes K to the draft's acceptance with an AIMD +2/-1
@@ -129,7 +149,7 @@ class CrisperWhisperModel:
 
     def __init__(
         self,
-        model_name_or_path: str,
+        model_name_or_path: str = DEFAULT_MODEL,
         *,
         backend: str = "auto",
         compute_type: str = "float16",
@@ -143,6 +163,10 @@ class CrisperWhisperModel:
         cache_dir: str | Path | None = None,
     ):
         from crisperwhisper.version import detect_model_version
+
+        model_name_or_path = resolve_model_id(model_name_or_path)
+        if draft_model is not None:
+            draft_model = resolve_model_id(draft_model)
 
         # Resolve the speculative-K policy into (seed, min, max).  Adaptive K
         # is active when max > min; the controller then self-tunes K to the

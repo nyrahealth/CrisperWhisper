@@ -1,8 +1,9 @@
 """CrisperWhisper model-version detection.
 
 Distinguishes the legacy v1 model (``nyrahealth/CrisperWhisper`` -- a plain
-Whisper model with a changed tokenizer) from v2 (``nyrahealth/CrisperWhisper2``
-and its derivatives) by checking the tokenizer files for v2 marker tokens.
+Whisper model with a changed tokenizer) from v2
+(``nyralabs/CrisperWhisper2.0_<size>`` and its derivatives) by checking the
+tokenizer files for v2 marker tokens.
 
 Both versions run on :class:`crisperwhisper.transformers_engine.TransformersEngine`
 (and v2 additionally on the CTranslate2 backend); the version only controls the
