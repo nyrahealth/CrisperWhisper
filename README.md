@@ -51,6 +51,33 @@ On top of that:
 - **Production inference.** A CTranslate2 runtime with speculative decoding
   and built-in mitigation of Whisper's looping-hallucination failure mode.
 
+## Performance
+
+The [Nyra Verbatim Speech Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
+scores fillers, repetitions, cut-offs, and vocal sounds as separate, typed
+metrics. Its headline number is **disfluency F1**: how reliably a system
+writes down the disfluencies that were actually spoken, without inventing
+ones that weren't. Averaged over ten languages:
+
+| # | System | Disfluency F1 |
+|--:|--------|--------------:|
+| 1 | **CrisperWhisper 2.0 Pro** | **93.5** |
+| 2 | **CrisperWhisper 2.0** | **87.8** |
+| 3 | ElevenLabs Scribe v2 | 79.2 |
+| 4 | Microsoft MAI-Transcribe-1.5 | 77.5 |
+| 5 | CrisperWhisper 1.0\* | 64.8 |
+| 6 | Inworld STT | 59.5 |
+| 7 | xAI Grok Speech-to-Text | 42.8 |
+| 8 | Deepgram Nova-3 | 37.8 |
+| 9 | Fish Audio ASR | 35.0 |
+| 10 | AssemblyAI Universal-3 Pro | 30.5 |
+
+<sub>\* CrisperWhisper 1.0 is English/German-only; its average covers those
+two languages. English and German use human-labeled evaluation sets; the
+other eight languages use synthetic verbatim sets. Per-language breakdowns
+and how the metric is computed are in the
+[benchmark post](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark).</sub>
+
 ## Install
 
 ```bash
