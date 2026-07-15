@@ -78,6 +78,27 @@ other eight languages use synthetic verbatim sets. Per-language breakdowns
 and how the metric is computed are in the
 [benchmark post](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark).</sub>
 
+### Word-timing accuracy
+
+Mean absolute word-boundary error on read speech (TIMIT), lower is better:
+
+| # | System | Boundary error |
+|--:|--------|---------------:|
+| 1 | **CrisperWhisper 2.0** | **29.6 ms** |
+| 2 | xAI Grok Speech-to-Text | 37.1 ms |
+| 3 | CTC-seg | 49.3 ms |
+| 4 | ElevenLabs Scribe v2 | 51.3 ms |
+| 5 | NeMo-FA | 60.0 ms |
+| 6 | Deepgram Nova-3 | 63.3 ms |
+| 7 | WhisperX | 64.8 ms |
+| 8 | Cartesia Ink-Whisper | 69.4 ms |
+| 9 | Canary | 85.5 ms |
+
+<sub>Scored on exactly the words each system gets right. How the timings
+are extracted from supervised cross-attention, plus results on
+conversational speech, are in the
+[aligner post](https://www.nyra-labs.com/research/attention-to-aligner).</sub>
+
 ## Install
 
 ```bash
