@@ -94,6 +94,16 @@ x86_64; on other platforms use `[transformers]`. Do **not** install
 `faster-whisper` (or upstream `ctranslate2`) alongside `[ct2]`: upstream
 ctranslate2 overwrites the fork's files in site-packages.
 
+The `[transformers]` extra requires `torch>=2.4` (current `transformers`
+releases refuse older torch at runtime). On platforms without torch 2.4
+wheels (notably Intel Macs, where torch stopped at 2.2), install the core
+package with a hand-picked older pair instead; the backend itself works
+with any `transformers>=4.40` and its matching torch:
+
+```bash
+pip install crisperwhisper "transformers==4.49.*" "torch==2.2.*"
+```
+
 For first-time model conversion from HuggingFace format to CT2:
 
 ```bash
