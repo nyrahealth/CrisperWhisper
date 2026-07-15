@@ -1,0 +1,93 @@
+name: Publish crisperwhisper to PyPI
+
+# Publishing uses PyPI Trusted Publishing (OIDC) — the publisher is
+# configured on https://pypi.org/manage/account/publishing/ for project
+# "crisperwhisper", repo "nyrahealth/CrisperWhisper", workflow
+# "publish.yml", environment "pypi".
+#
+# No GitHub Release is created for now: the repo's public face is still the
+# v1 code on main, and a v0.x release entry would confuse v1 users. Add a
+# release job when v2 becomes the repo's main line.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Core install only (no backend extras): the package must import and
+      # extract features with just the base dependencies.
+      - name: Install wheel and verify import
+        run: |
+          pip install dist/*.whl
+          python - <<'EOF'
+          import numpy as np
+
+          import crisperwhisper
+          from crisperwhisper.features import FeatureExtractor
+          from crisperwhisper.audio import load_audio
+
+          fe = FeatureExtractor(feature_size=128)
+          mel = fe(np.zeros(30 * 16000, dtype=np.float32), padding=0)
+          assert mel.shape == (128, 3000), mel.shape
+          audio = load_audio(np.zeros(48000, dtype=np.float32), sr=48000)
+          assert len(audio) == 16000, len(audio)
+          print("crisperwhisper", crisperwhisper.__version__, "ok")
+          EOF
+
+  publish-pypi:
+    needs: [build, smoke-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Trusted Publishing: authenticated via OIDC + the "pypi" environment,
+      # no API token secret.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
