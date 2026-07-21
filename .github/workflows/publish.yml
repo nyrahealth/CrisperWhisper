@@ -5,9 +5,8 @@ name: Publish crisperwhisper to PyPI
 # "crisperwhisper", repo "nyrahealth/CrisperWhisper", workflow
 # "publish.yml", environment "pypi".
 #
-# No GitHub Release is created for now: the repo's public face is still the
-# v1 code on main, and a v0.x release entry would confuse v1 users. Add a
-# release job when v2 becomes the repo's main line.
+# GitHub Releases are created manually (gh release create) alongside the
+# version tag; this workflow only builds and publishes to PyPI.
 
 on:
   push:
