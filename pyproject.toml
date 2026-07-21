@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crisperwhisper"
+dynamic = ["version"]
+description = "Fast inference for CrisperWhisper speech recognition models"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+# Core install pulls in NO inference backend.  Choose one (or both) via the
+# extras below: `pip install crisperwhisper[ct2]` (fast, CTranslate2),
+# `crisperwhisper[transformers]` (pure torch), or `crisperwhisper[all]`.
+dependencies = [
+    "tokenizers>=0.15",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "soxr>=0.3",
+    "huggingface_hub>=0.20",
+]
+
+[project.optional-dependencies]
+# CTranslate2 backend (fast path; supports speculative decoding).
+# >=4.7.1.post2: first fork build with generate_dual_greedy (transcribe_dual)
+# and the native speculative loop.
+# NOTE: do NOT add faster-whisper here — it depends on upstream ctranslate2,
+# which installs into the same site-packages/ctranslate2/ directory as the
+# fork and silently clobbers it (its FeatureExtractor is vendored in
+# crisperwhisper/features.py instead).
+# nvidia-cublas-cu12: the fork wheels are built with CUDA_DYNAMIC_LOADING=ON
+# and dlopen libcublas.so.12 at runtime; crisperwhisper/_nvidia_libs.py
+# preloads this pip copy so GPU inference works without a system CUDA
+# install. Linux-only wheels for now (that's also all the fork publishes).
+ct2 = [
+    # >=post3: post2 wheels lack SASS for Ada/Hopper GPUs (PTX-JIT failure
+    # on drivers older than the build toolchain).
+    "ctranslate2-crisperwhisper>=4.7.1.post3,<5",
+    "nvidia-cublas-cu12; sys_platform == 'linux'",
+]
+# HuggingFace Transformers backend (pure torch; no speculative decoding).
+# torch>=2.4: current transformers releases refuse older torch at runtime
+# ("Disabling PyTorch because PyTorch >= 2.4 is required"), and a
+# pre-existing torch 2.x would otherwise satisfy the extra and never get
+# upgraded. Note torch dropped Intel-mac wheels after 2.2; Intel-mac users
+# must hand-pick an older transformers/torch pair.
+transformers = ["transformers>=4.40", "torch>=2.4", "accelerate>=0.26"]
+# HF -> CT2 weight conversion (only needed to build CT2 models).
+convert = ["transformers>=4.40", "torch>=2.4"]
+# Convenience: install both backends.
+all = ["crisperwhisper[ct2,transformers]"]
+dev = ["crisperwhisper[all]", "pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/nyrahealth/CrisperWhisper"
+Documentation = "https://github.com/nyrahealth/CrisperWhisper#readme"
+Repository = "https://github.com/nyrahealth/CrisperWhisper"
+Issues = "https://github.com/nyrahealth/CrisperWhisper/issues"
+
+[tool.setuptools]
+packages = ["crisperwhisper", "crisperwhisper.longform"]
+
+# Single source of truth for the version: crisperwhisper/__init__.py.
+[tool.setuptools.dynamic]
+version = {attr = "crisperwhisper.__version__"}
+
+[tool.setuptools.package-data]
+crisperwhisper = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "gpu: end-to-end test requiring a converted CT2 model + CUDA (skipped unless CW2_MODEL_PATH is set)",
+    "transformers: end-to-end test on the HuggingFace transformers backend (skipped unless CW2_HF_MODEL_PATH is set)",
+    "legacy: end-to-end test for the deprecated v1 model (skipped unless CW_V1_MODEL_PATH is set)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
