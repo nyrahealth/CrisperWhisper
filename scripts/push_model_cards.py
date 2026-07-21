@@ -80,6 +80,11 @@ def main() -> None:
     parser.add_argument("--sizes", nargs="+", default=list(SIZES), choices=SIZES)
     parser.add_argument("--dry_run", action="store_true", help="Render only, no upload.")
     parser.add_argument("--out_dir", default="", help="With --dry_run: write cards here.")
+    parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Create missing repos as private (existing repos keep their visibility).",
+    )
     args = parser.parse_args()
 
     card = render_card((REPO_ROOT / "README.md").read_text(encoding="utf-8"))
@@ -106,7 +111,7 @@ def main() -> None:
         card_path = tmp.name
     for size in args.sizes:
         repo_id = f"nyralabs/CrisperWhisper2.0_{size}"
-        api.create_repo(repo_id, repo_type="model", exist_ok=True)
+        api.create_repo(repo_id, repo_type="model", exist_ok=True, private=args.private)
         api.upload_file(
             path_or_fileobj=card_path,
             path_in_repo="README.md",
