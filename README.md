@@ -7,7 +7,7 @@
 controllable, multilingual, and timed to the word.**
 
 [Release post](https://www.nyra-labs.com/crisperwhisper) ·
-[Paper](#) <!-- TODO: paper link --> ·
+[Paper](https://arxiv.org/abs/2607.18934) ·
 [Full documentation](DOCS.md) ·
 [Models](https://huggingface.co/nyralabs) ·
 [Benchmark](https://www.nyra-labs.com/research/nyra-verbatim-speech-benchmark)
