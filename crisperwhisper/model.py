@@ -424,13 +424,14 @@ class CrisperWhisperModel:
         timestamp_aware_drop: bool,
         temperature_fallback: bool,
         max_new_tokens: int,
+        early_eot_recovery: bool = True,
     ):
         """Validate the longform window parameters and build a LongformConfig.
 
         Single validation point shared by :meth:`transcribe` and
         :meth:`transcribe_dual`.
         """
-        from crisperwhisper.longform.base import LongformConfig
+        from crisperwhisper.longform.base import EarlyEotConfig, LongformConfig
 
         if not 0 < chunk_duration <= 30.0:
             raise ValueError(
@@ -450,6 +451,7 @@ class CrisperWhisperModel:
             timestamp_aware_drop=timestamp_aware_drop,
             temperature_fallback=temperature_fallback,
             max_new_tokens=max_new_tokens,
+            early_eot=EarlyEotConfig(enabled=bool(early_eot_recovery)),
         )
 
     def _warn_if_hotwords_unsupported(self, hotwords: list[str] | None) -> None:
@@ -492,6 +494,7 @@ class CrisperWhisperModel:
         speculative_decoding: bool = False,
         speculative_mode: str = "strict",
         hallucination_mitigation: bool = True,
+        early_eot_recovery: bool = True,
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
@@ -545,6 +548,16 @@ class CrisperWhisperModel:
             Enable post-hoc repetition repair during decoding (v2 only).
             Uses per-ngram-size thresholds from
             ``hallucination.DEFAULT_REPAIR_THRESHOLDS``.
+        early_eot_recovery
+            Recover a context-conditioned early end-of-text (v2 continuation
+            longform only).  Some checkpoints (notably ``large_pro``) can emit an
+            over-confident EOT at a sentence-final pause when a continuation
+            context is present, truncating the rest of a chunk.  When enabled
+            (default) the continuation strategy detects such a premature stop and
+            forces the decode past it, guarded so it never hallucinates into
+            trailing silence/noise (see
+            :class:`~crisperwhisper.longform.base.EarlyEotConfig`).  No-op on
+            short audio, and on backends without the required decode primitives.
         word_timestamps
             If ``True`` (v2 only), capture cross-attention during decoding
             and run a Viterbi alignment to populate
@@ -613,6 +626,7 @@ class CrisperWhisperModel:
             speculative_decoding=speculative_decoding,
             speculative_mode=speculative_mode,
             hallucination_mitigation=hallucination_mitigation,
+            early_eot_recovery=early_eot_recovery,
             word_timestamps=word_timestamps,
             alignment_heads=alignment_heads,
             suppress_tokens=suppress_tokens,
@@ -941,6 +955,7 @@ class CrisperWhisperModel:
         speculative_decoding: bool,
         speculative_mode: str,
         hallucination_mitigation: bool,
+        early_eot_recovery: bool = True,
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
@@ -954,6 +969,7 @@ class CrisperWhisperModel:
             timestamp_aware_drop=timestamp_aware_drop,
             temperature_fallback=temperature_fallback,
             max_new_tokens=max_new_tokens,
+            early_eot_recovery=early_eot_recovery,
         )
         from crisperwhisper.longform.chunked_lcs import chunked_lcs_transcribe
         from crisperwhisper.longform.continuation import (

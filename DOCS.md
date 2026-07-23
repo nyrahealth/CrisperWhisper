@@ -566,6 +566,54 @@ the speculative decoder does not expose, so with
 `speculative_decoding=True` the fallback is inactive (transcription
 proceeds normally without it).
 
+#### Early-EOT recovery (context-conditioned truncation)
+
+A distinct failure mode from a collapse: some context-conditioned checkpoints
+(notably `large_pro`) can emit an **over-confident end-of-text at a
+sentence-final pause** when a continuation context is present, truncating the
+rest of a chunk's audio.  Because the continuation prompt carries the previous
+words, a pause after a completed sentence reads as "utterance finished". On the
+default 30 s / 26 s geometry the collapsing chunk is frequently the *last* one,
+so the loss is silent and the overlap cannot recover it.  It affects `verbatim`
+and `intended` identically (the trigger is the context, not the mode tag).
+
+With `early_eot_recovery=True` (default, both backends, `continuation` strategy)
+each chunk's stop is gated on three conditions, all of which must hold to
+intervene:
+
+1. **Suspect stop** — `P(EOT) < 0.7`.  A confident stop is left alone.  This is
+   also what makes trailing silence/noise safe: at a genuine end the model stays
+   highly confident (≈1.0) even when loud non-speech follows, so the gate never
+   fires there.
+2. **Speech remains** — there are `≥ tail_min` seconds of *speech-active* audio
+   (mel-energy gate) after the last transcribed word, where the last-word
+   position comes from the cross-attention word timings.  Mel energy alone
+   cannot tell a premature stop from a window-edge stop — only the decode's
+   position relative to where speech ends can.  `tail_min` is 4 s on non-final
+   chunks (the overlap re-covers anything lost inside it) and 2 s on the final
+   chunk (nothing re-covers it).
+3. **Confident-termination guard** — the chunk is re-decoded with EOT forced
+   past the premature stop, and the longer decode is kept **only if it then
+   reaches a confident EOT** (`P(EOT) ≥ 0.9`).  A genuine collapse finds a new
+   confident sentence-end when pushed past the pause; a hallucination into
+   silence/noise (including a long-phrase repetition loop) never does, so it is
+   reverted to the original stop.  This guard is what prevents the gate from
+   ever forcing the decode into a hallucination.
+
+```python
+# On by default; disable to get the raw (possibly truncated) decode:
+result = model.transcribe("long_audio.wav", early_eot_recovery=False)
+```
+
+Thresholds live in `EarlyEotConfig` (`crisperwhisper/longform/base.py`); the
+gate itself is `crisperwhisper/longform/early_eot.py`.  It needs the engine's
+`eot_probability` / `greedy_stops_and_decode` primitives (both backends provide
+them; on `ct2` the extra work runs only on suspect chunks and reuses the fork's
+incremental `prefill`/`forward_step`).  It is active on the `continuation`
+strategy with `timestamp_aware_drop=True` (the default), and is a no-op on short
+(single-chunk) audio and on engines without the primitives (e.g. the speculative
+decoder).
+
 ### Speculative Decoding (ct2 backend only)
 
 > Deep dive: [Faster inference and mitigating hallucinations](https://www.nyra-labs.com/research/killing-hallucinations)

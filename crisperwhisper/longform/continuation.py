@@ -15,6 +15,10 @@ import numpy as np
 
 from crisperwhisper.fallback import decode_with_coverage_fallback, word_count
 from crisperwhisper.longform.base import LongformConfig, make_chunks
+from crisperwhisper.longform.early_eot import (
+    engine_supports_recovery,
+    recover_early_eot,
+)
 from crisperwhisper.prompt import strip_prompt_artifacts
 from crisperwhisper.result import ChunkResult, WordTimestamp
 from crisperwhisper.word_timing import monotonize_words
@@ -286,6 +290,34 @@ def continuation_transcribe_with_word_timestamps(
             audio_duration_s=chunk_dur,
             keep_unplaceable=True,
         )
+
+        # Recover a context-conditioned early EOT (large_pro truncates at a
+        # sentence-final pause when context is present).  Only fires on a
+        # low-confidence stop that left speech-active audio uncovered, and only
+        # keeps the extension if it terminates confidently (see
+        # :func:`recover_early_eot`).  Re-capture attention/timings on recovery.
+        if config.early_eot.enabled and engine_supports_recovery(engine):
+            stop_prob = engine.eot_probability(
+                features, prompt_tokens, gen_ids,
+                suppress_tokens=suppress_tokens,
+            )
+            recovered = recover_early_eot(
+                engine, features, mel, prompt_tokens, gen_ids,
+                stop_prob=stop_prob, word_ts=word_ts_local, is_last=is_last,
+                max_length=config.max_new_tokens, suppress_tokens=suppress_tokens,
+                config=config.early_eot,
+            )
+            if len(recovered) != len(gen_ids):
+                gen_ids = recovered
+                attention = engine.cross_attention_for_tokens(
+                    features, prompt_tokens, gen_ids,
+                )
+                word_ts_local = extract_word_timings(
+                    engine, gen_ids, attention, mel,
+                    audio_duration_s=chunk_dur,
+                    keep_unplaceable=True,
+                )
+
         words = [wt.word for wt in word_ts_local]
 
         if not words:
