@@ -2,11 +2,55 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 SAMPLE_RATE = 16_000
+
+
+@dataclass
+class EarlyEotConfig:
+    """Decode-time recovery of a context-conditioned early end-of-text.
+
+    Some context-conditioned CrisperWhisper checkpoints (notably ``large_pro``)
+    can emit an over-confident EOT at a sentence-final *pause* when a
+    continuation context is present, truncating the rest of a chunk's audio.
+    When enabled, the continuation strategy detects such a premature stop and,
+    guarded against hallucinating into trailing silence/noise, forces the decode
+    past it.  See :mod:`crisperwhisper.longform.early_eot` and DOCS.md.
+
+    * ``stop_prob_threshold`` -- a stop is *suspect* only when its P(EOT) is
+      below this. Confident stops (real ends, incl. trailing silence/noise where
+      the model stays confident) are never touched. Load-bearing.
+    * ``confident_prob`` -- the recovery is accepted only if, forced past the
+      premature stop, the decode then reaches an EOT at least this confident.
+      Otherwise the original stop is kept (revert). Prevents forcing the decode
+      into a repetition-loop / silence hallucination. Must be
+      ``>= stop_prob_threshold``.
+    * ``tail_min_final`` / ``tail_min_nonfinal`` -- minimum speech-active seconds
+      that must remain after the last transcribed word for a recovery to be
+      attempted. The non-final floor equals the chunk overlap (a loss inside the
+      overlap is re-covered by the next window anyway); the final chunk uses a
+      smaller floor since nothing re-covers it.
+    """
+
+    enabled: bool = True
+    stop_prob_threshold: float = 0.7
+    confident_prob: float = 0.9
+    tail_min_final: float = 2.0
+    tail_min_nonfinal: float = 4.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.stop_prob_threshold <= 1.0:
+            raise ValueError("stop_prob_threshold must be in (0, 1].")
+        if not 0.0 < self.confident_prob <= 1.0:
+            raise ValueError("confident_prob must be in (0, 1].")
+        if self.confident_prob < self.stop_prob_threshold:
+            raise ValueError(
+                "confident_prob must be >= stop_prob_threshold "
+                f"(got {self.confident_prob} < {self.stop_prob_threshold})."
+            )
 
 
 @dataclass
@@ -39,6 +83,7 @@ class LongformConfig:
     max_new_tokens: int = 256
     timestamp_aware_drop: bool = True
     temperature_fallback: bool = True
+    early_eot: EarlyEotConfig = field(default_factory=EarlyEotConfig)
 
 
 def make_chunks(audio: np.ndarray, config: LongformConfig) -> list[np.ndarray]:

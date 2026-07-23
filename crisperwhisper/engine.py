@@ -376,6 +376,95 @@ class CT2Engine:
         )
         return [int(t) for t in results[0].sequences_ids[0]]
 
+    # ------------------------------------------------------------------
+    # Early-EOT recovery primitives (see crisperwhisper.longform.early_eot).
+    # Implemented with the fork's incremental prefill/forward_step so we can see
+    # per-step logits (P(EOT) + EOT masking) that the batched generate hides.
+    # ------------------------------------------------------------------
+
+    def eot_probability(
+        self,
+        features: ctranslate2.StorageView,
+        prompt_tokens: list[int],
+        gen_ids: list[int],
+        *,
+        suppress_tokens: list[int] | None = None,
+    ) -> float | None:
+        """P(EOT) the model assigns at the point where ``gen_ids`` stops.
+
+        Prefills ``prompt_tokens`` then feeds ``gen_ids`` (any trailing EOT
+        stripped) through ``forward_batch`` and reads the soft-max probability of
+        EOT at the next position -- how confidently the decode chose to stop.
+        Suppression is applied so the probability matches the greedy
+        distribution.  Returns ``None`` when there is no content or no EOT id.
+        """
+        if self.eot_id is None:
+            return None
+        content = list(gen_ids)
+        while content and content[-1] == self.eot_id:
+            content.pop()
+        if not content:
+            return None
+        sup = self._resolve_suppress(suppress_tokens)
+        state, _logits = self.model.prefill(features, list(prompt_tokens))
+        batch = self.model.forward_batch(state, list(content))
+        arr = np.array(
+            batch.to(ctranslate2.DataType.float32).to_device(ctranslate2.Device.cpu)
+        )
+        logits = arr.reshape(-1, arr.shape[-1])[-1].astype(np.float32)
+        if sup:
+            logits[sup] = -np.inf
+        logits -= logits.max()
+        probs = np.exp(logits)
+        probs /= probs.sum()
+        return float(probs[self.eot_id])
+
+    def greedy_stops_and_decode(
+        self,
+        features: ctranslate2.StorageView,
+        prompt_tokens: list[int],
+        *,
+        max_length: int = 256,
+        suppress_tokens: list[int] | None = None,
+        min_new_tokens: int = 0,
+    ) -> tuple[list[int], float | None]:
+        """Greedy decode that reports its stop confidence.
+
+        EOT is suppressed for the first ``min_new_tokens`` generated steps
+        (forcing the decode past a premature stop); afterwards greedy runs
+        normally.  Returns ``(gen_ids, stop_prob)`` where ``gen_ids`` excludes
+        the trailing EOT and ``stop_prob`` is P(EOT) at the step that emitted it
+        -- or ``None`` if the decode ran to ``max_length`` without an EOT.
+        """
+        if max_length <= 0:
+            return [], None
+        sup = self._resolve_suppress(suppress_tokens)
+        eot = self.eot_id
+        state, logits = self.model.prefill(features, list(prompt_tokens))
+        gen: list[int] = []
+        stop_prob: float | None = None
+        for step in range(int(max_length)):
+            arr = np.array(
+                logits.to(ctranslate2.DataType.float32).to_device(
+                    ctranslate2.Device.cpu
+                )
+            )
+            lp = arr.reshape(-1, arr.shape[-1])[-1].astype(np.float32)
+            if sup:
+                lp[sup] = -np.inf
+            if eot is not None and step < int(min_new_tokens):
+                lp[eot] = -np.inf
+            tok = int(lp.argmax())
+            if eot is not None and tok == eot:
+                shifted = lp - lp.max()
+                probs = np.exp(shifted)
+                probs /= probs.sum()
+                stop_prob = float(probs[eot])
+                break
+            gen.append(tok)
+            logits = self.model.forward_step(state, tok)
+        return gen, stop_prob
+
     def cross_attention_for_tokens(
         self,
         features: ctranslate2.StorageView,

@@ -76,6 +76,38 @@ class _FirstStepBan:
         return scores
 
 
+class _EotGate:
+    """Logits processor for early-EOT recovery (see ``longform.early_eot``).
+
+    Bans EOT for the first ``min_new_tokens`` generated steps -- forcing the
+    greedy decode past a premature stop -- and records ``stop_prob``, the
+    soft-max probability of EOT at the step the decode stops on.  Suppression is
+    re-applied here so ``stop_prob`` is measured over the same masked
+    distribution greedy decoding argmaxes over.
+    """
+
+    def __init__(self, prefix_len, eot_id, suppress_ids, min_new_tokens):
+        self.prefix_len = int(prefix_len)
+        self.eot_id = eot_id
+        self.suppress = [int(t) for t in (suppress_ids or [])]
+        self.min_new_tokens = int(min_new_tokens)
+        self.stop_prob = None
+
+    def __call__(self, input_ids, scores):  # noqa: D401 - HF processor proto
+        import torch
+
+        step = input_ids.shape[1] - self.prefix_len
+        if self.suppress:
+            scores[:, self.suppress] = float("-inf")
+        if self.eot_id is not None and step < self.min_new_tokens:
+            scores[:, self.eot_id] = float("-inf")
+        if self.eot_id is not None and int(torch.argmax(scores[0])) == self.eot_id:
+            self.stop_prob = float(
+                torch.softmax(scores[0].float(), dim=-1)[self.eot_id]
+            )
+        return scores
+
+
 class TransformersEngine:
     """Wraps a HuggingFace Whisper model for CrisperWhisper inference."""
 
@@ -487,6 +519,103 @@ class TransformersEngine:
             suppress_tokens=suppress_tokens, do_sample=True,
             temperature=float(temperature), top_k=int(topk),
         )
+
+    # ------------------------------------------------------------------
+    # Early-EOT recovery primitives (see crisperwhisper.longform.early_eot).
+    # ------------------------------------------------------------------
+
+    def eot_probability(
+        self,
+        features,
+        prompt_tokens: list[int],
+        gen_ids: list[int],
+        *,
+        suppress_tokens: list[int] | None = None,
+    ) -> float | None:
+        """P(EOT) the model assigns at the point where ``gen_ids`` stops.
+
+        Teacher-forces ``prompt_tokens + gen_ids`` (any trailing EOT stripped) in
+        one forward pass and returns the soft-max probability of the end-of-text
+        token at the next position -- how confidently the decode chose to stop.
+        Suppression is applied to the logits so the probability is measured over
+        the same masked distribution the greedy decode saw.  Returns ``None``
+        when there is no content to score or the engine has no EOT id.
+        """
+        import torch
+
+        if self.eot_id is None:
+            return None
+        content = list(gen_ids)
+        while content and content[-1] == self.eot_id:
+            content.pop()
+        if not content:
+            return None
+        sup = self._resolve_suppress(suppress_tokens)
+        dec = torch.tensor(
+            [list(prompt_tokens) + content], device=self.device, dtype=torch.long
+        )
+        with torch.no_grad():
+            out = self.model(
+                input_features=features, decoder_input_ids=dec, use_cache=False,
+            )
+        logits = out.logits[0, -1].float()
+        if sup:
+            logits[torch.tensor(sup, device=logits.device, dtype=torch.long)] = float(
+                "-inf"
+            )
+        return float(torch.softmax(logits, dim=-1)[self.eot_id])
+
+    def greedy_stops_and_decode(
+        self,
+        features,
+        prompt_tokens: list[int],
+        *,
+        max_length: int = 256,
+        suppress_tokens: list[int] | None = None,
+        min_new_tokens: int = 0,
+    ) -> tuple[list[int], float | None]:
+        """Greedy decode that reports its stop confidence.
+
+        EOT is suppressed for the first ``min_new_tokens`` generated steps
+        (forcing the decode past a premature stop); afterwards greedy runs
+        normally.  Returns ``(gen_ids, stop_prob)`` where ``gen_ids`` excludes
+        the trailing EOT and ``stop_prob`` is P(EOT) at the step that emitted it
+        -- or ``None`` if the decode ran to ``max_length`` without an EOT (i.e.
+        it did not reach a clean stop, which the recovery gate treats as
+        non-confident).
+        """
+        import torch
+        from transformers import LogitsProcessorList
+
+        if max_length <= 0:
+            return [], None
+        dec = torch.tensor(
+            [list(prompt_tokens)], device=self.device, dtype=torch.long
+        )
+        sup = self._resolve_suppress(suppress_tokens)
+        gate = _EotGate(
+            prefix_len=len(prompt_tokens), eot_id=self.eot_id,
+            suppress_ids=sup, min_new_tokens=int(min_new_tokens),
+        )
+        with torch.no_grad():
+            out = self.model.generate(
+                features, decoder_input_ids=dec, max_new_tokens=int(max_length),
+                num_beams=1, do_sample=False, suppress_tokens=list(sup),
+                logits_processor=LogitsProcessorList([gate]),
+            )
+        seq = [int(t) for t in out[0].tolist()]
+        gen = (
+            seq[len(prompt_tokens):]
+            if seq[: len(prompt_tokens)] == list(prompt_tokens)
+            else seq
+        )
+        # HF's Whisper ``generate`` does not append the EOT token to the returned
+        # sequence, so we rely on the gate -- ``gate.stop_prob`` is set iff EOT
+        # became the argmax (the greedy stop) and is ``None`` iff the decode ran
+        # to ``max_length`` without stopping.  Strip a trailing EOT defensively.
+        if gen and self.eot_id is not None and gen[-1] == self.eot_id:
+            gen = gen[:-1]
+        return gen, gate.stop_prob
 
     def cross_attention_for_tokens(
         self,

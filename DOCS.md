@@ -566,6 +566,84 @@ the speculative decoder does not expose, so with
 `speculative_decoding=True` the fallback is inactive (transcription
 proceeds normally without it).
 
+Temperature fallback is the **first** of two recovery stages in the continuation
+pipeline; early-EOT recovery (below) runs after it. They target different
+failure modes and compose cleanly — see the ordering note at the end of the next
+section.
+
+#### Early-EOT recovery (context-conditioned truncation)
+
+A distinct failure mode from a collapse: some context-conditioned checkpoints
+(notably `large_pro`) can emit an **over-confident end-of-text at a
+sentence-final pause** when a continuation context is present, truncating the
+rest of a chunk's audio.  Because the continuation prompt carries the previous
+words, a pause after a completed sentence reads as "utterance finished". On the
+default 30 s / 26 s geometry the collapsing chunk is frequently the *last* one,
+so the loss is silent and the overlap cannot recover it.  It affects `verbatim`
+and `intended` identically (the trigger is the context, not the mode tag).
+
+With `early_eot_recovery=True` (default, both backends, `continuation` strategy)
+each chunk's stop is gated on three conditions, all of which must hold to
+intervene. They are evaluated **cheapest-first**, so a healthy chunk is dismissed
+without any extra compute:
+
+1. **Speech remains** (free) — there are `≥ tail_min` seconds of *speech-active*
+   audio (mel-energy gate) after the last transcribed word, where the last-word
+   position comes from the cross-attention word timings already extracted for
+   this chunk. Mel energy alone cannot tell a premature stop from a window-edge
+   stop — only the decode's position relative to where speech ends can. `tail_min`
+   is 4 s on non-final chunks (the overlap re-covers anything lost inside it) and
+   2 s on the final chunk (nothing re-covers it). On a healthy chunk the decode
+   already reached the end of speech, so the gap is ~0 and the gate stops here —
+   **no forward pass**.
+2. **Suspect stop** — only now is `P(EOT)` measured (one teacher-forced pass).
+   A confident stop (`P(EOT) ≥ 0.7`) is left alone. This is also what makes
+   trailing silence/noise safe: at a genuine end the model stays highly confident
+   (≈1.0) even when loud non-speech follows, so the gate never fires there.
+3. **Confident-termination guard** — the chunk is re-decoded with EOT forced
+   past the premature stop, and the longer decode is kept **only if it then
+   reaches a confident EOT** (`P(EOT) ≥ 0.9`).  A genuine collapse finds a new
+   confident sentence-end when pushed past the pause; a hallucination into
+   silence/noise (including a long-phrase repetition loop) never does, so it is
+   reverted to the original stop.  This guard is what prevents the gate from
+   ever forcing the decode into a hallucination.
+
+```python
+# On by default; disable to get the raw (possibly truncated) decode:
+result = model.transcribe("long_audio.wav", early_eot_recovery=False)
+
+# Applies to transcribe_dual too — recovers verbatim + intended in one pass:
+verbatim, intended = model.transcribe_dual("long_audio.wav")
+```
+
+Because the gap check (step 1) is free and dismisses healthy chunks, the extra
+cost is paid **only on chunks that actually stopped early with speech left** — a
+teacher-forced `P(EOT)` pass, plus a re-decode when it then triggers. In
+`transcribe_dual` the gate runs per row: healthy rows are untouched, so the
+shared batched decode keeps its speed; only a collapsed row falls back to a
+single-prompt re-decode for its own recovery.
+
+Thresholds live in `EarlyEotConfig` (`crisperwhisper/longform/base.py`); the
+gate itself is `crisperwhisper/longform/early_eot.py`.  It needs the engine's
+`eot_probability` / `greedy_stops_and_decode` primitives (both backends provide
+them; on `ct2` they reuse the fork's incremental `prefill`/`forward_step`).  It
+is active on the `continuation` strategy (`transcribe` and `transcribe_dual`)
+with `timestamp_aware_drop=True` (the default), and is a no-op on short
+(single-chunk) audio and on engines without the primitives (e.g. the speculative
+decoder).
+
+**Ordering vs. temperature fallback.** Within each chunk the pipeline runs
+hallucination repair → **temperature fallback** → **early-EOT recovery**, so the
+temperature fallback effectively takes precedence: it acts first, on the raw
+greedy decode. The two handle *different* failures — temperature fallback rescues
+a **total collapse** (speech fills the chunk but almost no words came out) by
+re-sampling at higher temperature; early-EOT rescues a **partial** stop (the
+chunk transcribed fine, then quit at a sentence pause with speech left) by
+forcing a greedy continuation. They compose without conflict: when the
+temperature fallback restores full coverage, the last word already reaches the
+end of speech, so early-EOT's gap is ~0 and it does not fire. Each can be
+toggled independently (`temperature_fallback`, `early_eot_recovery`).
+
 ### Speculative Decoding (ct2 backend only)
 
 > Deep dive: [Faster inference and mitigating hallucinations](https://www.nyra-labs.com/research/killing-hallucinations)
