@@ -146,8 +146,8 @@ into a local cache.
 | Shorthand | HuggingFace ID | Notes |
 |-----------|----------------|-------|
 | `"large"` (default) | `nyralabs/CrisperWhisper2.0_large` | Best open quality |
-| `"turbo"` | `nyralabs/CrisperWhisper2.0_turbo` | Near-large quality, fastest; also the recommended speculative draft |
-| `"medium"` | `nyralabs/CrisperWhisper2.0_medium` | |
+| `"turbo"` | `nyralabs/CrisperWhisper2.0_turbo` | Fastest, with some quality degradation; recommended as the speculative draft |
+| `"medium"` | `nyralabs/CrisperWhisper2.0_medium` | Near-large quality; best tradeoff between size and quality |
 | `"small"` | `nyralabs/CrisperWhisper2.0_small` | Smallest |
 | `"large_pro"` / `"turbo_pro"` / `"medium_pro"` / `"small_pro"` | `nyralabs/CrisperWhisper2.0_<size>_pro` | **Pro**: our best models, with improved performance, hotword boosting, trained on additional proprietary data |
 
