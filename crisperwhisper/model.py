@@ -649,6 +649,7 @@ class CrisperWhisperModel:
         temperature_fallback: bool = True,
         max_new_tokens: int = 256,
         hallucination_mitigation: bool = True,
+        early_eot_recovery: bool = True,
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
@@ -719,6 +720,11 @@ class CrisperWhisperModel:
         with their own real greedy tokens ("catch-up") until the rows line up,
         then decodes them together -- so the batching benefit is not limited
         to equal-length chunks.
+
+        ``early_eot_recovery`` (default on) applies per row: a healthy row is
+        dismissed by the cheap gap check, so the shared batched decode is
+        unaffected; only a row that actually collapsed pays for a single-prompt
+        re-decode of its own recovery.
         """
         self._warn_if_hotwords_unsupported(hotwords)
         if self._model_version == 1:
@@ -751,6 +757,7 @@ class CrisperWhisperModel:
             timestamp_aware_drop=timestamp_aware_drop,
             temperature_fallback=temperature_fallback,
             max_new_tokens=max_new_tokens,
+            early_eot_recovery=early_eot_recovery,
         )
 
         t0 = time.perf_counter()

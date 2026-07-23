@@ -98,7 +98,6 @@ def recover_early_eot(
     prompt_tokens,
     gen_ids,
     *,
-    stop_prob,
     word_ts,
     is_last,
     max_length,
@@ -108,19 +107,22 @@ def recover_early_eot(
     """Return token ids for the chunk, extending *gen_ids* past a premature EOT
     when (and only when) all three gate conditions hold.
 
+    The conditions are checked cheapest-first, so healthy chunks are dismissed
+    without a forward pass: the trailing-speech ``gap`` (from mel energy + the
+    already-computed word timings) is tested *before* ``P(EOT)`` is measured, and
+    the recovery re-decode runs last -- only on a genuine collapse candidate.
+
     Parameters
     ----------
     engine
-        Inference engine exposing ``greedy_stops_and_decode`` (and ``eot_id``).
+        Inference engine exposing ``eot_probability`` + ``greedy_stops_and_decode``
+        (and ``eot_id``).
     features, mel
         The chunk's encoder features and log-mel spectrogram.
     prompt_tokens
         The decoder prompt used for this chunk (mode tags + continuation ctx).
     gen_ids
         The chunk's current greedy decode (may include a trailing EOT).
-    stop_prob
-        ``P(EOT)`` at the current stop (from :meth:`engine.eot_probability`);
-        ``None`` if the decode did not stop on EOT.
     word_ts
         Per-word timings of *gen_ids* (1-to-1, unplaceable words carry
         ``end=None``) -- used to locate the last transcribed word.
@@ -137,18 +139,25 @@ def recover_early_eot(
     """
     if not config.enabled:
         return gen_ids
-    if stop_prob is None or stop_prob >= config.stop_prob_threshold:
-        return gen_ids  # confident (or non-EOT) stop -> leave alone
 
+    # (1) cheap gap check first -- dismisses healthy chunks with no forward pass.
     last_end = _last_word_end(word_ts)
     if last_end is None:
         return gen_ids  # no placeable word -> cannot locate the decode position
-
     tail_min = config.tail_min_final if is_last else config.tail_min_nonfinal
     gap = _speech_active_after(mel, last_end)
     if gap < tail_min:
         return gen_ids  # no speech-active audio left to recover
 
+    # (2) only now pay for P(EOT): a confident stop is left alone (this is also
+    # what makes loud trailing non-speech safe -- the model stays confident).
+    stop_prob = engine.eot_probability(
+        features, list(prompt_tokens), gen_ids, suppress_tokens=suppress_tokens,
+    )
+    if stop_prob is None or stop_prob >= config.stop_prob_threshold:
+        return gen_ids
+
+    # (3) force past the premature EOT; keep it only if it terminates confidently.
     eot_id = getattr(engine, "eot_id", None)
     content_len = _content_len(gen_ids, eot_id)
     ext_ids, ext_prob = engine.greedy_stops_and_decode(

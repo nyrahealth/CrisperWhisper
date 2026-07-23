@@ -29,18 +29,26 @@ EOT = 99
 
 
 class StubEngine:
-    """Engine double: scripts the forced-continuation decode the gate performs.
+    """Engine double for the gate.
 
-    ``greedy_stops_and_decode`` ignores the audio and returns the configured
-    ``(ext_ids, ext_prob)``, recording the ``min_new_tokens`` it was asked for.
+    ``eot_probability`` returns the scripted stop probability (and records that
+    it was asked -- the gate should only call it after the cheap gap check
+    passes).  ``greedy_stops_and_decode`` returns the scripted forced-continuation
+    ``(ext_ids, ext_prob)`` and records the ``min_new_tokens`` it was asked for.
     """
 
     eot_id = EOT
 
-    def __init__(self, ext_ids, ext_prob):
+    def __init__(self, ext_ids, ext_prob, *, stop_prob=0.5):
         self._ext_ids = list(ext_ids)
         self._ext_prob = ext_prob
-        self.calls: list[int] = []
+        self._stop_prob = stop_prob
+        self.calls: list[int] = []       # greedy_stops_and_decode min_new_tokens
+        self.eot_calls: int = 0          # eot_probability invocations
+
+    def eot_probability(self, features, prompt_tokens, gen_ids, *, suppress_tokens=None):
+        self.eot_calls += 1
+        return self._stop_prob
 
     def greedy_stops_and_decode(
         self, features, prompt_tokens, *, max_length,
@@ -66,10 +74,10 @@ def _words(*ends):
     return [WordTimestamp(word=f"w{i}", start=None, end=e) for i, e in enumerate(ends)]
 
 
-def _call(engine, *, gen_ids, stop_prob, word_ts, mel, is_last, config):
+def _call(engine, *, gen_ids, word_ts, mel, is_last, config):
     return recover_early_eot(
         engine, features=None, mel=mel, prompt_tokens=[1, 2, 3],
-        gen_ids=list(gen_ids), stop_prob=stop_prob, word_ts=word_ts,
+        gen_ids=list(gen_ids), word_ts=word_ts,
         is_last=is_last, max_length=256, suppress_tokens=None, config=config,
     )
 
@@ -97,9 +105,9 @@ def test_speech_active_after_pure_silence_is_zero():
 
 def test_recovers_on_low_confidence_stop_with_speech_and_confident_continuation():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
     gen = [10, 11, 12]  # 3 content tokens
-    out = _call(eng, gen_ids=gen, stop_prob=0.5, word_ts=_words(8.0),
+    out = _call(eng, gen_ids=gen, word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == list(range(40)) + [EOT]        # extended + trailing EOT
     assert eng.calls == [len(gen) + 1]           # forced one past the stop
@@ -107,9 +115,9 @@ def test_recovers_on_low_confidence_stop_with_speech_and_confident_continuation(
 
 def test_reverts_when_continuation_not_confident():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(200)), ext_prob=0.55)  # long but unsure
+    eng = StubEngine(ext_ids=list(range(200)), ext_prob=0.55, stop_prob=0.5)
     gen = [10, 11, 12]
-    out = _call(eng, gen_ids=gen, stop_prob=0.5, word_ts=_words(8.0),
+    out = _call(eng, gen_ids=gen, word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == gen                            # reverted -- no blowup
     assert eng.calls == [len(gen) + 1]           # it did attempt
@@ -117,28 +125,31 @@ def test_reverts_when_continuation_not_confident():
 
 def test_reverts_when_continuation_ran_to_max_without_eot():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(200)), ext_prob=None)  # never stopped
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=0.5, word_ts=_words(8.0),
+    eng = StubEngine(ext_ids=list(range(200)), ext_prob=None, stop_prob=0.5)
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == [10, 11, 12]
 
 
 def test_confident_stop_is_left_alone():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=0.95, word_ts=_words(8.0),
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.95)
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == [10, 11, 12]
-    assert eng.calls == []                       # never re-decoded
+    assert eng.eot_calls == 1                    # gap passed, so P(EOT) measured
+    assert eng.calls == []                       # but never re-decoded
 
 
-def test_no_trailing_speech_does_not_fire():
+def test_no_trailing_speech_skips_the_eot_pass():
+    """The gap-first reorder: no speech left -> P(EOT) is never even measured."""
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
     # last word ends at 19.5 s, speech ends 20 s -> gap 0.5 s < tail_min
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=0.5, word_ts=_words(19.5),
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=_words(19.5),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == [10, 11, 12]
+    assert eng.eot_calls == 0                    # cheap gap check dismissed it
     assert eng.calls == []
 
 
@@ -147,51 +158,55 @@ def test_final_chunk_uses_smaller_tail_floor_than_nonfinal():
     # gap = 3 s: above the final floor (2), below the non-final floor (4)
     words = _words(17.0)
     mel = _mel(30, 20)
-    eng_final = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out_final = _call(eng_final, gen_ids=[10, 11, 12], stop_prob=0.5,
+    eng_final = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
+    out_final = _call(eng_final, gen_ids=[10, 11, 12],
                       word_ts=words, mel=mel, is_last=True, config=cfg)
     assert out_final == list(range(40)) + [EOT]  # fired on the final chunk
 
-    eng_mid = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out_mid = _call(eng_mid, gen_ids=[10, 11, 12], stop_prob=0.5,
+    eng_mid = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
+    out_mid = _call(eng_mid, gen_ids=[10, 11, 12],
                     word_ts=words, mel=mel, is_last=False, config=cfg)
     assert out_mid == [10, 11, 12]               # non-final: 3 s < 4 s floor
+    assert eng_mid.eot_calls == 0                # dismissed before the P(EOT) pass
     assert eng_mid.calls == []
 
 
 def test_disabled_config_is_a_noop():
     cfg = EarlyEotConfig(enabled=False)
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=0.1, word_ts=_words(8.0),
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.1)
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == [10, 11, 12]
+    assert eng.eot_calls == 0
     assert eng.calls == []
 
 
 def test_none_stop_prob_is_left_alone():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=None, word_ts=_words(8.0),
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=None)
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=_words(8.0),
                 mel=_mel(30, 20), is_last=True, config=cfg)
     assert out == [10, 11, 12]
+    assert eng.eot_calls == 1                    # measured, came back None
     assert eng.calls == []
 
 
 def test_no_placeable_word_cannot_locate_position():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
-    out = _call(eng, gen_ids=[10, 11, 12], stop_prob=0.5,
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
+    out = _call(eng, gen_ids=[10, 11, 12],
                 word_ts=_words(None, None), mel=_mel(30, 20),
                 is_last=True, config=cfg)
     assert out == [10, 11, 12]
+    assert eng.eot_calls == 0
     assert eng.calls == []
 
 
 def test_trailing_eot_in_gen_ids_is_not_double_counted():
     cfg = EarlyEotConfig()
-    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99)
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
     # gen_ids already carries a trailing EOT -> content length is 3, min_new 4
-    _call(eng, gen_ids=[10, 11, 12, EOT], stop_prob=0.5, word_ts=_words(8.0),
+    _call(eng, gen_ids=[10, 11, 12, EOT], word_ts=_words(8.0),
           mel=_mel(30, 20), is_last=True, config=cfg)
     assert eng.calls == [4]
 
@@ -213,13 +228,20 @@ def test_config_rejects_out_of_range_probabilities():
 
 
 def test_engine_supports_recovery_feature_detection():
-    assert engine_supports_recovery(StubEngine([], None)) is False  # no eot_probability
+    # StubEngine provides both primitives.
+    assert engine_supports_recovery(StubEngine([], None)) is True
 
-    class Full(StubEngine):
+    class OnlyProb:
         def eot_probability(self, *a, **k):
             return 0.5
 
-    assert engine_supports_recovery(Full([], None)) is True
+    assert engine_supports_recovery(OnlyProb()) is False  # missing the re-decode
+
+    class OnlyDecode:
+        def greedy_stops_and_decode(self, *a, **k):
+            return [], None
+
+    assert engine_supports_recovery(OnlyDecode()) is False  # missing P(EOT)
 
     class Bare:
         pass

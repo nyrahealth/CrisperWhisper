@@ -297,13 +297,9 @@ def continuation_transcribe_with_word_timestamps(
         # keeps the extension if it terminates confidently (see
         # :func:`recover_early_eot`).  Re-capture attention/timings on recovery.
         if config.early_eot.enabled and engine_supports_recovery(engine):
-            stop_prob = engine.eot_probability(
-                features, prompt_tokens, gen_ids,
-                suppress_tokens=suppress_tokens,
-            )
             recovered = recover_early_eot(
                 engine, features, mel, prompt_tokens, gen_ids,
-                stop_prob=stop_prob, word_ts=word_ts_local, is_last=is_last,
+                word_ts=word_ts_local, is_last=is_last,
                 max_length=config.max_new_tokens, suppress_tokens=suppress_tokens,
                 config=config.early_eot,
             )
@@ -530,6 +526,27 @@ def continuation_transcribe_dual(
                     audio_duration_s=chunk_dur,
                     keep_unplaceable=True,
                 )
+                # Recover a context-conditioned early EOT for this row (mirrors
+                # the single-mode path).  The recovery re-decode is single-prompt,
+                # so only a triggered row gives up batching -- and just for its
+                # own recovery; healthy rows are dismissed by the cheap gap check.
+                if config.early_eot.enabled and engine_supports_recovery(engine):
+                    recovered = recover_early_eot(
+                        engine, features1, mel, prompts[j], gen_ids,
+                        word_ts=word_ts_local, is_last=is_last,
+                        max_length=config.max_new_tokens,
+                        suppress_tokens=suppress_tokens, config=config.early_eot,
+                    )
+                    if len(recovered) != len(gen_ids):
+                        gen_ids = recovered
+                        attention = engine.cross_attention_for_tokens(
+                            features1, prompts[j], gen_ids,
+                        )
+                        word_ts_local = extract_word_timings(
+                            engine, gen_ids, attention, mel,
+                            audio_duration_s=chunk_dur,
+                            keep_unplaceable=True,
+                        )
                 words = [wt.word for wt in word_ts_local]
             else:
                 raw = strip_prompt_artifacts(
