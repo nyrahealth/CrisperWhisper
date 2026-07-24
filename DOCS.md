@@ -644,6 +644,18 @@ temperature fallback restores full coverage, the last word already reaches the
 end of speech, so early-EOT's gap is ~0 and it does not fire. Each can be
 toggled independently (`temperature_fallback`, `early_eot_recovery`).
 
+> **Serving note (ct2): drive the model from ONE thread.** The recovery's
+> incremental ct2 primitives (`prefill`/`forward_step`/`forward_batch`) are
+> affine to the thread that *created* the model — CTranslate2 binds decoder
+> state and the CUDA context to it. If you load the model on one thread and run
+> inference on another (e.g. a web framework's request threadpool), the recovery
+> becomes **non-deterministic**: `P(EOT)` wobbles around the trigger and
+> whole-sentence recovery flips on/off between otherwise-identical requests. The
+> atomic batched decode hides this; the step-wise recovery exposes it. Load
+> **and** run the model on a single dedicated thread — e.g. a
+> `ThreadPoolExecutor(max_workers=1)` that both constructs the model and runs
+> every `transcribe` / `transcribe_dual` call (this also serializes the GPU).
+
 ### Speculative Decoding (ct2 backend only)
 
 > Deep dive: [Faster inference and mitigating hallucinations](https://www.nyra-labs.com/research/killing-hallucinations)
