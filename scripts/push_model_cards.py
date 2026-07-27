@@ -53,6 +53,19 @@ tags:
 
 
 def render_card(readme: str) -> str:
+    # The model card describes the *weights*, so the repo's code license (MIT)
+    # is irrelevant here — drop that paragraph and reframe the weights sentence.
+    # README.md itself keeps the code-license statement for the GitHub repo.
+    readme = re.sub(
+        r"\*\*The inference code in this repository is MIT-licensed\*\*.*?"
+        r"\(MIT, SYSTRAN\)\.\s*\n\n"
+        r"\*\*The model weights are not MIT\.\*\* They are released under the",
+        "The model weights are released under the",
+        readme, flags=re.S,
+    )
+    # Also strip a standalone MIT license badge if present in the header row.
+    readme = re.sub(r"\n?\[!\[License: MIT\][^\n]*\n?", "\n", readme)
+
     # Repo-relative markdown link targets -> absolute GitHub URLs. Matching on
     # the `](target)` tail (instead of the whole link) also covers nested
     # badge links like [![alt](badge-url)](LICENSE).

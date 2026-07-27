@@ -1,7 +1,6 @@
 # CrisperWhisper 2.0
 
 [![PyPI](https://img.shields.io/pypi/v/crisperwhisper?cacheSeconds=3600)](https://pypi.org/project/crisperwhisper/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **The most accurate verbatim speech recognition you can run in production:
 controllable, multilingual, and timed to the word.**
