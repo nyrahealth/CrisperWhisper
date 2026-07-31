@@ -140,26 +140,47 @@ def recover_early_eot(
     if not config.enabled:
         return gen_ids
 
+    eot_id = getattr(engine, "eot_id", None)
+    content_len = _content_len(gen_ids, eot_id)
+
     # (1) cheap gap check first -- dismisses healthy chunks with no forward pass.
     last_end = _last_word_end(word_ts)
     if last_end is None:
-        return gen_ids  # no placeable word -> cannot locate the decode position
-    tail_min = config.tail_min_final if is_last else config.tail_min_nonfinal
-    gap = _speech_active_after(mel, last_end)
-    if gap < tail_min:
-        return gen_ids  # no speech-active audio left to recover
+        # First-token EOT collapse (issue #48): the window decoded to nothing
+        # because the model emitted EOT immediately -- confidently -- on
+        # speech-dense audio. There is no last word to anchor a trailing gap, so
+        # gate on the whole window's speech, and DO NOT apply the confidence
+        # trigger: unlike a mid-window stop, this stop is confident yet wrong, so
+        # "confident stop -> leave alone" is inverted here. The confident-
+        # termination guard (step 3) is the safety net -- a genuinely empty/near-
+        # silent window forced past EOT rambles without a confident end and is
+        # reverted.
+        if content_len > 0:
+            return gen_ids  # produced tokens but none placeable -> not this bug
+        gap = _speech_active_after(mel, 0.0)
+        if gap < config.empty_min_speech:
+            return gen_ids  # too little speech -> genuinely empty, leave it
+        stop_prob = engine.eot_probability(
+            features, list(prompt_tokens), gen_ids, suppress_tokens=suppress_tokens,
+        )  # measured for the log only; not a gate in the empty-window path
+        empty_window = True
+    else:
+        tail_min = config.tail_min_final if is_last else config.tail_min_nonfinal
+        gap = _speech_active_after(mel, last_end)
+        if gap < tail_min:
+            return gen_ids  # no speech-active audio left to recover
 
-    # (2) only now pay for P(EOT): a confident stop is left alone (this is also
-    # what makes loud trailing non-speech safe -- the model stays confident).
-    stop_prob = engine.eot_probability(
-        features, list(prompt_tokens), gen_ids, suppress_tokens=suppress_tokens,
-    )
-    if stop_prob is None or stop_prob >= config.stop_prob_threshold:
-        return gen_ids
+        # (2) only now pay for P(EOT): a confident stop is left alone (this is
+        # also what makes loud trailing non-speech safe -- the model stays
+        # confident).
+        stop_prob = engine.eot_probability(
+            features, list(prompt_tokens), gen_ids, suppress_tokens=suppress_tokens,
+        )
+        if stop_prob is None or stop_prob >= config.stop_prob_threshold:
+            return gen_ids
+        empty_window = False
 
     # (3) force past the premature EOT; keep it only if it terminates confidently.
-    eot_id = getattr(engine, "eot_id", None)
-    content_len = _content_len(gen_ids, eot_id)
     ext_ids, ext_prob = engine.greedy_stops_and_decode(
         features,
         list(prompt_tokens),
@@ -169,27 +190,46 @@ def recover_early_eot(
     )
     # Confident-termination guard: keep the extension only if it found a new,
     # confident sentence-end and actually made progress.
-    if (
+    ext_content = _content_len(ext_ids, eot_id)
+    accept = (
         ext_prob is not None
         and ext_prob >= config.confident_prob
-        and len(ext_ids) > content_len
-    ):
+        and ext_content > content_len
+    )
+    # Minimum-progress guard for empty windows: a genuine recovery covers the
+    # window's speech, so reject a forced decode that stops confidently after
+    # only a few tokens without transcribing (e.g. verbatim mode on some
+    # non-English audio forces to a repeated ``[yawn]`` rather than the words --
+    # keeping it would fabricate vocal events; an empty window is more honest).
+    if accept and empty_window:
+        min_recovered = config.empty_min_recovered_per_s * gap
+        if ext_content < min_recovered:
+            logger.debug(
+                "early-EOT reverted [empty-window]: recovery too short "
+                "(%d tokens < %.0f for %.1fs speech) -- likely a non-transcribing "
+                "collapse; left empty.",
+                ext_content, min_recovered, gap,
+            )
+            accept = False
+    if accept:
         logger.info(
-            "early-EOT recovery%s: stop_p=%.2f gap=%.1fs -> +%d tokens "
+            "early-EOT recovery%s%s: stop_p=%s gap=%.1fs -> +%d tokens "
             "(new stop_p=%.2f)",
+            " [empty-window]" if empty_window else "",
             " [final]" if is_last else "",
-            stop_prob,
+            "n/a" if stop_prob is None else f"{stop_prob:.2f}",
             gap,
-            len(ext_ids) - content_len,
+            ext_content - content_len,
             ext_prob,
         )
         if eot_id is not None:
             return list(ext_ids) + [eot_id]
         return list(ext_ids)
     logger.debug(
-        "early-EOT reverted: stop_p=%.2f gap=%.1fs continuation not confident "
+        "early-EOT reverted%s: stop_p=%s gap=%.1fs continuation not confident "
         "(ext_p=%s)",
-        stop_prob,
+        " [empty-window]" if empty_window else "",
+        "n/a" if stop_prob is None else f"{stop_prob:.2f}",
         gap,
         None if ext_prob is None else round(ext_prob, 2),
     )

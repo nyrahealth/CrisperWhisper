@@ -148,6 +148,31 @@ def continuation_transcribe(
         raw = strip_prompt_artifacts(raw)
         words = raw.split()
 
+        # First-token EOT collapse (issue #48): an empty chunk on speech-dense
+        # audio.  The timing path recovers this using word timings; here there
+        # are none, so pass ``word_ts=[]`` -- ``recover_early_eot`` then takes
+        # its empty-window branch (whole-window speech gate + confident-
+        # termination guard).  Mid-window premature stops (mode 2) need timings
+        # to locate, so they are not recoverable on this no-timing path.
+        if (
+            not words
+            and config.early_eot.enabled
+            and engine_supports_recovery(engine)
+        ):
+            _, mel = engine.extract_features_with_mel(chunk)
+            recovered = recover_early_eot(
+                engine, features, mel, prompt_tokens, gen_ids,
+                word_ts=[], is_last=is_last,
+                max_length=config.max_new_tokens,
+                suppress_tokens=suppress_tokens, config=config.early_eot,
+            )
+            if len(recovered) != len(gen_ids):
+                gen_ids = recovered
+                raw = strip_prompt_artifacts(
+                    engine.decode_tokens(gen_ids, skip_special=True)
+                )
+                words = raw.split()
+
         if not words:
             logger.warning("Chunk %d/%d produced empty output.", i + 1, n_chunks)
             chunk_results.append(ChunkResult(

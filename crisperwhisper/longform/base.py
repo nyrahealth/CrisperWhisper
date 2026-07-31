@@ -33,6 +33,21 @@ class EarlyEotConfig:
       attempted. The non-final floor equals the chunk overlap (a loss inside the
       overlap is re-covered by the next window anyway); the final chunk uses a
       smaller floor since nothing re-covers it.
+    * ``empty_min_speech`` -- the *first-token* EOT case: a window that decodes
+      to nothing because the model emitted EOT as its first token, with high
+      confidence, on speech-dense audio (see issue #48). Here there is no last
+      word to anchor a trailing gap, so recovery is gated on the whole window's
+      speech-active seconds instead, and the confidence *trigger* is skipped
+      (the stop is confident yet wrong -- the confident-termination guard is what
+      keeps it safe). A window with less speech than this is left empty.
+    * ``empty_min_recovered_per_s`` -- minimum forced-continuation tokens per
+      second of window speech for an empty-window recovery to be *accepted*.
+      Guards against a degenerate forced decode that stops confidently after a
+      few tokens without transcribing (e.g. verbatim mode on some non-English
+      audio forces to a repeated vocal-event token like ``[yawn]`` rather than
+      the words). Such a "recovery" is rejected and the window is left empty --
+      an honest gap beats fabricated content. Well below real speech token rates
+      (~3-4 tok/s), so genuine recoveries are never rejected.
     """
 
     enabled: bool = True
@@ -40,6 +55,8 @@ class EarlyEotConfig:
     confident_prob: float = 0.9
     tail_min_final: float = 2.0
     tail_min_nonfinal: float = 4.0
+    empty_min_speech: float = 6.0
+    empty_min_recovered_per_s: float = 1.0
 
     def __post_init__(self) -> None:
         if not 0.0 < self.stop_prob_threshold <= 1.0:
@@ -51,6 +68,8 @@ class EarlyEotConfig:
                 "confident_prob must be >= stop_prob_threshold "
                 f"(got {self.confident_prob} < {self.stop_prob_threshold})."
             )
+        if self.empty_min_speech < 0.0:
+            raise ValueError("empty_min_speech must be >= 0.")
 
 
 @dataclass

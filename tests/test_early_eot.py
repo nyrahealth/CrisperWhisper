@@ -171,6 +171,66 @@ def test_final_chunk_uses_smaller_tail_floor_than_nonfinal():
     assert eng_mid.calls == []
 
 
+# --------------------------------------------------------------------------
+# Empty-window (first-token EOT) recovery -- issue #48
+# --------------------------------------------------------------------------
+
+def test_empty_window_recovers_on_speech_dense_window():
+    """An empty decode on a speech-dense window is forced past the first-token
+    EOT and kept when the continuation terminates confidently."""
+    cfg = EarlyEotConfig()
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.87)
+    out = _call(eng, gen_ids=[], word_ts=[], mel=_mel(30, 25),
+                is_last=False, config=cfg)
+    assert out == list(range(40)) + [EOT]
+    assert eng.calls == [1]                      # forced EOT off the first step
+
+
+def test_empty_window_skipped_when_too_little_speech():
+    """A (near-)silent empty window is left empty -- no forced decode."""
+    cfg = EarlyEotConfig()  # empty_min_speech = 6.0
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.87)
+    out = _call(eng, gen_ids=[], word_ts=[], mel=_mel(30, 3),
+                is_last=False, config=cfg)
+    assert out == []
+    assert eng.calls == []                        # never attempted
+
+
+def test_empty_window_reverts_when_continuation_not_confident():
+    """Forcing a genuinely empty window past EOT that then rambles without a
+    confident end is reverted -- the guard is what makes forcing safe."""
+    cfg = EarlyEotConfig()
+    eng = StubEngine(ext_ids=list(range(200)), ext_prob=0.55, stop_prob=0.9)
+    out = _call(eng, gen_ids=[], word_ts=[], mel=_mel(30, 25),
+                is_last=False, config=cfg)
+    assert out == []                              # reverted -- no blowup
+    assert eng.calls == [1]                       # it did attempt
+
+
+def test_empty_window_rejects_degenerate_short_recovery():
+    """A confident but tiny forced decode on a speech-dense window (the verbatim
+    ``[yawn][yawn]`` failure) is rejected -- an empty window beats fabricated
+    vocal events."""
+    cfg = EarlyEotConfig()  # empty_min_recovered_per_s = 1.0
+    # 25 s of speech but the forced decode confidently stops after 2 tokens.
+    eng = StubEngine(ext_ids=[10, 11], ext_prob=0.94, stop_prob=0.9)
+    out = _call(eng, gen_ids=[], word_ts=[], mel=_mel(30, 25),
+                is_last=False, config=cfg)
+    assert out == []                              # 2 < 25 -> left empty
+    assert eng.calls == [1]                       # it did attempt
+
+
+def test_content_without_placeable_words_is_not_empty_window():
+    """A chunk that produced tokens but no placeable word is not the
+    first-token bug -- leave it (its timings, not its coverage, are the issue)."""
+    cfg = EarlyEotConfig()
+    eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.5)
+    out = _call(eng, gen_ids=[10, 11, 12], word_ts=[], mel=_mel(30, 25),
+                is_last=False, config=cfg)
+    assert out == [10, 11, 12]
+    assert eng.calls == []
+
+
 def test_disabled_config_is_a_noop():
     cfg = EarlyEotConfig(enabled=False)
     eng = StubEngine(ext_ids=list(range(40)), ext_prob=0.99, stop_prob=0.1)
