@@ -69,6 +69,9 @@ Documentation = "https://github.com/nyrahealth/CrisperWhisper#readme"
 Repository = "https://github.com/nyrahealth/CrisperWhisper"
 Issues = "https://github.com/nyrahealth/CrisperWhisper/issues"
 
+[project.scripts]
+crisperwhisper = "crisperwhisper.cli:main"
+
 [tool.setuptools]
 packages = ["crisperwhisper", "crisperwhisper.longform"]
 

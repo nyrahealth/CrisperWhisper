@@ -109,6 +109,34 @@ pip install "crisperwhisper[ct2]"
 pip install "crisperwhisper[transformers]"
 ```
 
+### Docker on macOS
+
+Docker Desktop cannot expose the Apple GPU (Metal/MPS) to Linux containers,
+so the local image uses the portable Transformers backend on CPU. It defaults
+to the `small` model to keep resource use reasonable and persists downloaded
+models in a Docker volume.
+
+```bash
+docker compose build
+mkdir -p audio
+cp /path/to/meeting.wav audio/
+
+docker compose run --rm crisperwhisper \
+  transcribe /input/meeting.wav --language en --mode verbatim
+```
+
+For JSON with word timestamps:
+
+```bash
+docker compose run --rm crisperwhisper \
+  transcribe /input/meeting.wav --word-timestamps --format json \
+  --output /output/meeting.json
+```
+
+Set `CW_MODEL=turbo` (or `medium` / `large`) before the Compose command to
+select another model. The first run downloads the selected model. Run
+`docker compose run --rm crisperwhisper transcribe --help` for all options.
+
 ## Quickstart
 
 ```python
