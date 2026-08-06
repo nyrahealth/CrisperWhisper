@@ -138,7 +138,18 @@ result = model.verbatimize("clip.wav", "I think we should ship it Friday.")
 Audio longer than 30 seconds is handled automatically (see
 [longform](#what-else-is-in-the-box) below). The first load of a model
 downloads it from HuggingFace and, on the `ct2` backend, converts it once
-into a local cache.
+into a local cache. That **one-time conversion** needs torch and
+transformers, which the lean `[ct2]` extra does not install -- add them
+once with:
+
+```bash
+pip install "crisperwhisper[ct2,convert]"   # or add [convert] later
+```
+
+A CPU-only torch is enough for the conversion, and the dependencies can
+be uninstalled once the converted model is cached. Loading a directory
+that already contains a converted CT2 model (`model.bin`) never needs
+them.
 
 ### Models
 

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from crisperwhisper.converter import _list_has_null, _sanitize_ct2_configs
 
 
@@ -61,3 +63,49 @@ class TestSanitizeCT2Configs:
 
     def test_missing_files_ok(self, tmp_path):
         _sanitize_ct2_configs(tmp_path)  # no config files: no-op, no error
+
+
+class TestConversionDepsPreflight:
+    """Issue #51: a missing torch/transformers must fail fast with an
+    actionable message, not a bare ``NameError`` from inside the CT2
+    converter."""
+
+    def _hf_format_dir(self, tmp_path):
+        # HF-format checkpoint layout: config.json but no CT2 model.bin.
+        d = tmp_path / "hf_model"
+        d.mkdir()
+        (d / "config.json").write_text("{}")
+        return d
+
+    def test_missing_torch_raises_actionable_importerror(
+        self, tmp_path, monkeypatch,
+    ):
+        import sys
+
+        from crisperwhisper.converter import ensure_ct2_model
+
+        # Simulate an environment without the conversion deps: a None entry
+        # in sys.modules makes ``import torch`` raise ImportError.
+        monkeypatch.setitem(sys.modules, "torch", None)
+        monkeypatch.setitem(sys.modules, "transformers", None)
+
+        with pytest.raises(ImportError, match=r"crisperwhisper\[convert\]"):
+            ensure_ct2_model(
+                str(self._hf_format_dir(tmp_path)),
+                cache_dir=tmp_path / "cache",
+            )
+
+    def test_ct2_format_dir_needs_no_conversion_deps(
+        self, tmp_path, monkeypatch,
+    ):
+        import sys
+
+        from crisperwhisper.converter import ensure_ct2_model
+
+        monkeypatch.setitem(sys.modules, "torch", None)
+        monkeypatch.setitem(sys.modules, "transformers", None)
+
+        d = tmp_path / "ct2_model"
+        d.mkdir()
+        (d / "model.bin").write_bytes(b"")
+        assert ensure_ct2_model(str(d), cache_dir=tmp_path / "cache") == d
