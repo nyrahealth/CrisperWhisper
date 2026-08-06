@@ -222,3 +222,90 @@ class TestTokenLCS:
         seqs = [[1, 2, 3], [2, 3, 4], [3, 4, 5]]
         merged = _find_longest_common_token_sequence(seqs, set())
         assert merged == [1, 2, 3, 4, 5]
+
+
+class TestStitchStep:
+    """The generic LCS stitch shared by the timed and untimed chunked paths."""
+
+    def _config(self):
+        return LongformConfig(chunk_duration=30.0, stride=26.0)
+
+    def test_string_items_match_legacy_merge(self):
+        from crisperwhisper.longform.chunked_lcs import _stitch_step
+
+        prev = ["a", "b", "brown", "fox", "c"]
+        nxt = ["brown", "fox", "jumps", "over"]
+        merged, length, lcs_words = _stitch_step(
+            prev, nxt, self._config(), word_of=lambda w: w,
+        )
+        assert merged == ["a", "b", "brown", "fox", "jumps", "over"]
+        assert length == 2
+        assert lcs_words == "brown fox"
+
+    def test_no_overlap_concatenates(self):
+        from crisperwhisper.longform.chunked_lcs import _stitch_step
+
+        merged, length, lcs_words = _stitch_step(
+            ["x", "y"], ["p", "q"], self._config(), word_of=lambda w: w,
+        )
+        assert merged == ["x", "y", "p", "q"]
+        assert length == 0
+        assert lcs_words == ""
+
+    def test_word_timestamp_items_same_cut_as_strings(self):
+        """The stitch decision must be identical whether items are plain
+        strings or WordTimestamp objects (it compares word strings)."""
+        from crisperwhisper.longform.chunked_lcs import _stitch_step
+
+        prev_s = ["a", "b", "brown", "fox", "c"]
+        nxt_s = ["brown", "fox", "jumps"]
+        prev_wt = [_wt(i, i + 0.5, w) for i, w in enumerate(prev_s)]
+        nxt_wt = [_wt(26 + i, 26 + i + 0.5, w) for i, w in enumerate(nxt_s)]
+
+        merged_s, len_s, _ = _stitch_step(
+            prev_s, nxt_s, self._config(), word_of=lambda w: w,
+        )
+        merged_wt, len_wt, _ = _stitch_step(
+            prev_wt, nxt_wt, self._config(), word_of=lambda w: w.word,
+        )
+        assert len_wt == len_s
+        assert [w.word for w in merged_wt] == merged_s
+        # kept LCS words carry the PREVIOUS chunk's timings; post-LCS words
+        # carry the new chunk's timings
+        assert merged_wt[2].start == 2       # "brown" from prev
+        assert merged_wt[-1].start == 26 + 2  # "jumps" from nxt
+
+
+class TestMergeWithProvenance:
+    def test_tags_match_merged_tokens(self):
+        from crisperwhisper.longform.token_lcs import _merge_with_provenance
+
+        seqs = [[1, 2, 3], [2, 3, 4]]
+        merged = _merge_with_provenance(seqs, set())
+        assert [t for t, _, _ in merged] == [1, 2, 3, 4]
+        # prefix comes from chunk 0, appended suffix from chunk 1
+        assert [(c, k) for _, c, k in merged] == [(0, 0), (0, 1), (0, 2), (1, 2)]
+
+    def test_special_filter_keeps_original_indices(self):
+        from crisperwhisper.longform.token_lcs import _merge_with_provenance
+
+        # 99 is special: filtered before alignment, but orig indices must
+        # still refer to the UNFILTERED sequences.  (The merge needs a >1
+        # token overlap to stitch -- same as the plain HF-style merge.)
+        seqs = [[99, 1, 2, 3], [2, 99, 3, 4]]
+        merged = _merge_with_provenance(seqs, {99})
+        assert [t for t, _, _ in merged] == [1, 2, 3, 4]
+        assert [(c, k) for _, c, k in merged] == [
+            (0, 1), (0, 2), (0, 3), (1, 3),
+        ]
+
+    def test_equivalence_with_plain_merge(self):
+        from crisperwhisper.longform.token_lcs import (
+            _find_longest_common_token_sequence,
+            _merge_with_provenance,
+        )
+
+        seqs = [[1, 2, 3, 4], [3, 4, 5, 6], [5, 6, 7]]
+        plain = _find_longest_common_token_sequence(seqs, {99})
+        tagged = _merge_with_provenance(seqs, {99})
+        assert plain == [t for t, _, _ in tagged]

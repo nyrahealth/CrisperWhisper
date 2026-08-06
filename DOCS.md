@@ -378,14 +378,18 @@ Notes:
 * By default the alignment heads come from the model's `config.json`
   (copied from the HuggingFace `generation_config`).  Override with
   `alignment_heads=[(layer, head), ...]` if you have a custom selection.
-* Only the `continuation` longform strategy supports the seam-smoothing
-  pass.
 * `word_timestamps=True` **is** now supported together with
-  `speculative_decoding=True` (see below).  It is still **not**
-  implemented for `longform_strategy` values other than
-  `"continuation"`; the LCS-stitched strategies would need a per-chunk
-  timing pass with an overlap merge rule, and that call still raises
-  `NotImplementedError`.
+  `speculative_decoding=True` (see below).
+* `word_timestamps=True` works with **every** `longform_strategy`.  The
+  LCS-stitched strategies (`chunked_lcs`, `token_lcs`) recover each
+  chunk's cross-attention with one teacher-forced pass -- the generated
+  tokens (and therefore the transcript) are identical to
+  `word_timestamps=False` -- then carry the per-chunk Viterbi timings
+  through the stitch (`chunked_lcs`: the LCS stitch operates on the
+  timestamped words; `token_lcs`: the token merge tracks per-token
+  chunk provenance and each merged word takes its timing from its
+  source chunk).  All strategies finish with the same seam
+  monotonisation pass.
 
 #### Word timestamps + speculative decoding
 

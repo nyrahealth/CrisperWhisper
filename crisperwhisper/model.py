@@ -571,11 +571,11 @@ class CrisperWhisperModel:
             Combines with ``speculative_decoding=True`` (ct2): accepted
             draft tokens keep the draft model's cross-attention and
             verifier corrections keep the main model's (a warning notes the
-            timings may be slightly less precise).  **Not implemented** with
-            a ``longform_strategy`` other than ``"continuation"`` (the
-            LCS-stitched strategies need their own per-chunk timing +
-            overlap-window merge rule); that combination raises
-            :class:`NotImplementedError`.
+            timings may be slightly less precise).  Works with every
+            ``longform_strategy``: the LCS-stitched strategies recover each
+            chunk's attention with a teacher-forced pass (tokens are
+            identical to ``word_timestamps=False``) and carry the timings
+            through the stitch/merge.
         alignment_heads
             Explicit ``[(layer, head), ...]`` selection to extract
             attention from.  Defaults to the model's stored alignment heads
@@ -1050,25 +1050,32 @@ class CrisperWhisperModel:
                     f"Expected one of {list(longform_strategies.keys())}."
                 )
 
-            if word_timestamps and longform_strategy != "continuation":
-                # Not yet implemented: only the continuation strategy
-                # has the per-chunk timing + global-seam-monotonisation
-                # pass (see ``continuation_transcribe_with_word_timestamps``).
-                # Wiring this up for the LCS-stitched strategies is
-                # feasible but non-trivial -- the LCS overlap window
-                # would need its own attention-row merge rule.  Raise
-                # so the caller switches strategies explicitly.
-                raise NotImplementedError(
-                    f"word_timestamps=True with "
-                    f"longform_strategy={longform_strategy!r} is not "
-                    f"implemented yet.  Use "
-                    f"longform_strategy='continuation' for now, or "
-                    f"set word_timestamps=False to use this strategy."
-                )
-
             strategy_fn = longform_strategies[longform_strategy]
 
-            if longform_strategy == "continuation":
+            if word_timestamps and longform_strategy != "continuation":
+                # LCS-stitched strategies time each chunk via a teacher-forced
+                # attention pass (identical tokens to the untimed path) and
+                # carry timings through the stitch/merge; see
+                # ``chunked_lcs_transcribe_with_word_timestamps`` and
+                # ``token_lcs_transcribe_with_word_timestamps``.
+                from crisperwhisper.longform.chunked_lcs import (
+                    chunked_lcs_transcribe_with_word_timestamps,
+                )
+                from crisperwhisper.longform.token_lcs import (
+                    token_lcs_transcribe_with_word_timestamps,
+                )
+
+                ts_strategy_fn = {
+                    "chunked_lcs": chunked_lcs_transcribe_with_word_timestamps,
+                    "token_lcs": token_lcs_transcribe_with_word_timestamps,
+                }[longform_strategy]
+                text, chunks, words = ts_strategy_fn(
+                    engine, prompt_builder, audio_array, lf_config,
+                    mode=mode, hotwords=hw,
+                    alignment_heads=alignment_heads,
+                    suppress_tokens=suppress_tokens,
+                )
+            elif longform_strategy == "continuation":
                 if word_timestamps:
                     text, chunks, words = continuation_transcribe_with_word_timestamps(
                         engine, prompt_builder, audio_array, lf_config,

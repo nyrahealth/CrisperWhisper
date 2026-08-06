@@ -92,6 +92,48 @@ class TestLongformAudio:
         assert result.text, "empty transcription"
         assert result.chunks is not None
 
+    @pytest.mark.parametrize("strategy", ["chunked_lcs", "token_lcs"])
+    def test_lcs_word_timestamps(self, model, long_audio, strategy):
+        """Issue #52: word_timestamps=True with the LCS-stitched strategies."""
+        result = model.transcribe(
+            long_audio, sr=16000, mode="verbatim", language="en",
+            longform_strategy=strategy, word_timestamps=True,
+        )
+        assert result.text, "empty transcription"
+        assert result.words, "no word timestamps returned"
+
+        audio_dur = len(long_audio) / 16000
+        prev_end = 0.0
+        for w in result.words:
+            assert w.start is not None and w.end is not None
+            assert 0.0 <= w.start <= w.end <= audio_dur + 1.0
+            assert w.start >= prev_end - 1e-6, (
+                f"non-monotonic timeline at {w.word!r}"
+            )
+            prev_end = w.end
+
+        # Timed words must cover the transcript (identical for chunked_lcs,
+        # where the timing segmentation is the word source; near-total for
+        # token_lcs, where rare unplaceable words are omitted).
+        n_text_words = len(result.text.split())
+        assert len(result.words) >= 0.9 * n_text_words
+
+    @pytest.mark.parametrize("strategy", ["chunked_lcs", "token_lcs"])
+    def test_lcs_word_timestamps_same_text(self, model, long_audio, strategy):
+        """Timestamps must not change the transcript: the attention pass is
+        teacher-forced, so tokens are identical either way."""
+        untimed = model.transcribe(
+            long_audio, sr=16000, mode="verbatim", language="en",
+            longform_strategy=strategy,
+        )
+        timed = model.transcribe(
+            long_audio, sr=16000, mode="verbatim", language="en",
+            longform_strategy=strategy, word_timestamps=True,
+        )
+        # Compare on whitespace-normalised words: the timed chunked_lcs path
+        # sources words from the (canonical) timing segmentation.
+        assert timed.text.split() == untimed.text.split()
+
 
 class TestVerbatimize:
     def test_verbatimize(self, model, en_audio):

@@ -201,30 +201,45 @@ def ensure_ct2_model(
             "pip install ctranslate2-crisperwhisper"
         ) from exc
 
-    try:
-        converter = ctranslate2.converters.TransformersConverter(
-            str(model_dir),
-            copy_files=None,
-            load_as_float16=quantization in ("float16", "int8_float16", "int8_bfloat16"),
-        )
-        _orig_load_model = converter.load_model
-
-        def _patched_load_model(model_class, name, **kwargs):
-            if "dtype" in kwargs:
-                kwargs["torch_dtype"] = kwargs.pop("dtype")
-            return _orig_load_model(model_class, name, **kwargs)
-
-        converter.load_model = _patched_load_model
-    except Exception:
+    # Preflight the conversion-only dependencies BEFORE touching the CT2
+    # converter.  Constructing TransformersConverter succeeds without torch --
+    # the failure would otherwise surface deep inside converter.convert() as a
+    # bare ``NameError: name 'torch' is not defined`` (issue #51).  The [ct2]
+    # extra deliberately ships without torch (inference never needs it); only
+    # this one-time conversion does.
+    missing = []
+    for dep in ("torch", "transformers"):
         try:
-            from transformers import WhisperForConditionalGeneration
-            _ = WhisperForConditionalGeneration  # verify import
-        except ImportError as exc2:
-            raise ImportError(
-                "transformers and torch are required for first-time model conversion. "
-                "Install with: pip install crisperwhisper[convert]"
-            ) from exc2
-        raise
+            __import__(dep)
+        except ImportError:
+            missing.append(dep)
+    if missing:
+        raise ImportError(
+            f"Converting {model_name_or_path!r} to CTranslate2 format requires "
+            f"{' and '.join(missing)}, which the [ct2] extra deliberately does "
+            "not install (inference itself never needs torch -- only this "
+            "one-time conversion does).  Install the conversion extras:\n\n"
+            '    pip install "crisperwhisper[convert]"\n\n'
+            "A CPU-only torch is sufficient (pip install torch --index-url "
+            "https://download.pytorch.org/whl/cpu).  The converted model is "
+            "cached, so the conversion dependencies can be uninstalled "
+            "afterwards.  Alternatively, pass a directory that already "
+            "contains a converted CT2 model (model.bin)."
+        )
+
+    converter = ctranslate2.converters.TransformersConverter(
+        str(model_dir),
+        copy_files=None,
+        load_as_float16=quantization in ("float16", "int8_float16", "int8_bfloat16"),
+    )
+    _orig_load_model = converter.load_model
+
+    def _patched_load_model(model_class, name, **kwargs):
+        if "dtype" in kwargs:
+            kwargs["torch_dtype"] = kwargs.pop("dtype")
+        return _orig_load_model(model_class, name, **kwargs)
+
+    converter.load_model = _patched_load_model
 
     ct2_dir.mkdir(parents=True, exist_ok=True)
     converter.convert(str(ct2_dir), quantization=quantization, force=True)
