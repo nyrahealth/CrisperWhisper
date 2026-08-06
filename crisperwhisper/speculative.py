@@ -425,6 +425,16 @@ class SpeculativeDecoder:
             self._draft_features = None
         return self.main.extract_features_with_mel(audio)
 
+    def cross_attention_for_tokens(self, features, prompt_tokens, gen_ids):
+        """Teacher-forced attention recovery for an already-decoded token
+        sequence.  Delegates to the main model: the tokens are final, so the
+        main model's alignment heads give the most accurate timings (used by
+        the LCS longform word-timestamp paths).
+        """
+        return self.main.cross_attention_for_tokens(
+            features, prompt_tokens, gen_ids,
+        )
+
     # ------------------------------------------------------------------
     # Cross-attention configuration (word timings under speculative
     # decoding).  Heads are enabled on *both* models: the draft model

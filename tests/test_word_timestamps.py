@@ -225,17 +225,24 @@ class TestEndToEnd:
             for w in result.words:
                 assert 0.0 <= w.start <= w.end <= result.duration + 0.5
 
-    def test_word_timestamps_lcs_longform_raises(self, model):
-        """``word_timestamps=True`` with a non-continuation longform
-        strategy must raise ``NotImplementedError`` (the LCS-stitched
-        strategies have no per-token timing path).
+    def test_word_timestamps_lcs_longform_supported(self, model):
+        """``word_timestamps=True`` works with the LCS-stitched longform
+        strategies (issue #52): each chunk's attention is recovered with a
+        teacher-forced pass and timings are carried through the stitch.
+        The full-quality path is exercised on real speech in
+        ``test_e2e_gpu.py``; this synthetic clip just asserts the call
+        succeeds and returns a well-formed (possibly empty) word list.
         """
         audio = np.tile(self._make_tone_burst_audio(total_s=5.0), 8)  # 40s
-        with pytest.raises(NotImplementedError, match="continuation"):
-            model.transcribe(
+        for strategy in ("chunked_lcs", "token_lcs"):
+            result = model.transcribe(
                 audio, sr=16000,
                 word_timestamps=True,
-                longform_strategy="chunked_lcs",
+                longform_strategy=strategy,
+            )
+            assert result.words is None or all(
+                w.start is not None and w.end is not None and w.start <= w.end
+                for w in result.words
             )
 
 
