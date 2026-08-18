@@ -14,6 +14,7 @@ import pytest
 from crisperwhisper.result import WordTimestamp
 from crisperwhisper.word_timing import (
     blank_logp_from_mel_energy,
+    decode_word_texts,
     extract_word_timings,
     group_tokens_into_words,
     token_logp_from_attention,
@@ -156,6 +157,52 @@ class TestTokenGrouping:
         pieces = ["<ctx>", "<ectx>", " hi", "[verbatim_1]", "there", "<eot>"]
         word_idx, word_text = group_tokens_into_words(tok_ids, pieces)
         assert word_text == ["hi", "there"]
+
+
+class _StubUtf8Engine:
+    """Mimic Whisper byte-pair decode: ids 690+99 are space+æ only together."""
+
+    def decode_tokens(self, token_ids, skip_special=True):
+        ids = [int(t) for t in token_ids]
+        out = []
+        i = 0
+        while i < len(ids):
+            if ids[i : i + 2] == [690, 99]:
+                out.append(" æ")
+                i += 2
+                continue
+            tid = ids[i]
+            if tid == 690:
+                out.append(" \ufffd")
+            elif tid == 99:
+                out.append("\ufffd")
+            elif tid == 273:
+                out.append("nd")
+            elif tid == 265:
+                out.append("re")
+            else:
+                out.append("")
+            i += 1
+        return "".join(out)
+
+
+class TestGroupedWordDecode:
+    def test_space_ae_byte_pair_is_one_word_span(self):
+        tok_ids = [690, 99, 273, 265]
+        pieces = [" \ufffd", "\ufffd", "nd", "re"]
+        word_idx, concat_text = group_tokens_into_words(tok_ids, pieces)
+        assert word_idx == [[0, 1, 2, 3]]
+        # Concatenated pieces are expected to be broken; grouped decode
+        # reconstitutes the word in test_grouped_decode_reconstitutes_ae.
+        assert concat_text == ["\ufffd\ufffdndre"]
+
+    def test_grouped_decode_reconstitutes_ae(self):
+        tok_ids = [690, 99, 273, 265]
+        pieces = [" \ufffd", "\ufffd", "nd", "re"]
+        word_idx, _ = group_tokens_into_words(tok_ids, pieces)
+        texts = decode_word_texts(_StubUtf8Engine(), tok_ids, word_idx)
+        assert texts == ["ændre"]
+        assert "\ufffd" not in texts[0]
 
 
 # ---------------------------------------------------------------------------

@@ -80,7 +80,15 @@ def group_tokens_into_words(
     token_ids: List[int],
     token_pieces: List[str],
 ) -> Tuple[List[List[int]], List[str]]:
-    """Group token indices into words, returning ``(word_token_indices, word_texts)``."""
+    """Group token indices into words.
+
+    Returns ``(word_token_indices, word_texts)``. Callers need the first
+    value: contiguous token-index spans, excluding special and space-only
+    tokens. The second value is concatenated per-token pieces, used for
+    grouping / tests only. Those strings can contain U+FFFD for UTF-8
+    byte-pair words (e.g. space+æ); production word text comes from
+    :func:`decode_word_texts`.
+    """
     word_token_indices: List[List[int]] = []
     word_texts: List[str] = []
 
@@ -112,6 +120,28 @@ def group_tokens_into_words(
 
     flush()
     return word_token_indices, word_texts
+
+
+def decode_word_texts(
+    engine,
+    token_ids: List[int],
+    word_token_indices: List[List[int]],
+) -> List[str]:
+    """Decode each word's token span as a group.
+
+    Per-token ``tokenizer.decode([id])`` is required for word *boundaries*
+    (leading space), but UTF-8 byte-pair pieces (e.g. space+æ → ids 690+99)
+    only reconstitute when decoded together.  Concatenating per-token
+    strings yields U+FFFD for those words.
+
+    Timed continuation feeds ``wt.word`` back as the next chunk's context,
+    so this is decode quality, not display.
+    """
+    texts: List[str] = []
+    for idxs in word_token_indices:
+        ids = [int(token_ids[i]) for i in idxs]
+        texts.append(engine.decode_tokens(ids, skip_special=True).strip())
+    return texts
 
 
 # ---------------------------------------------------------------------------
@@ -504,9 +534,10 @@ def extract_word_timings(
     # Tokens -> word groups (mirrors group_token_rows_into_words in
     # evaluation/timing_extractors.py).
     tok_pieces = [engine.tokenizer.decode([t]) for t in gen_ids]
-    word_token_indices, word_texts = group_tokens_into_words(gen_ids, tok_pieces)
+    word_token_indices, _ = group_tokens_into_words(gen_ids, tok_pieces)
     if not word_token_indices:
         return []
+    word_texts = decode_word_texts(engine, gen_ids, word_token_indices)
 
     # Frame window for alignment. By default we use the FULL encoder window and
     # let the Viterbi blank states absorb the silent (padding) region.

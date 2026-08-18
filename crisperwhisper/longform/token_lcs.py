@@ -15,7 +15,11 @@ import numpy as np
 from crisperwhisper.longform.base import LongformConfig, make_chunks
 from crisperwhisper.prompt import strip_prompt_artifacts
 from crisperwhisper.result import ChunkResult, WordTimestamp
-from crisperwhisper.word_timing import group_tokens_into_words, monotonize_words
+from crisperwhisper.word_timing import (
+    decode_word_texts,
+    group_tokens_into_words,
+    monotonize_words,
+)
 
 if TYPE_CHECKING:
     from crisperwhisper.interfaces import EngineProtocol
@@ -247,9 +251,10 @@ def token_lcs_transcribe_with_word_timestamps(
     # Segment the merged token sequence into words and time each word from
     # its source-chunk Viterbi alignment via the provenance tags.
     merged_pieces = [engine.tokenizer.decode([t]) for t in merged_tokens]
-    merged_word_groups, merged_word_texts = group_tokens_into_words(
+    merged_word_groups, _ = group_tokens_into_words(
         merged_tokens, merged_pieces,
     )
+    merged_word_texts = decode_word_texts(engine, merged_tokens, merged_word_groups)
 
     def _global_time(pos: int, which: str):
         _, chunk_idx, orig_idx = merged[pos]

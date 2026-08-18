@@ -160,3 +160,13 @@ class TestTransformersTokenizerParity:
         pieces = [tf_engine.tokenizer.decode([t]) for t in ids]
         _, words = group_tokens_into_words(ids, pieces)
         assert words == ["hello", "world"]
+
+    def test_grouped_decode_reconstitutes_danish_ae(self, tf_engine):
+        from crisperwhisper.word_timing import decode_word_texts, group_tokens_into_words
+
+        ids = tf_engine.encode_text(" ændre")
+        pieces = [tf_engine.tokenizer.decode([t]) for t in ids]
+        word_idx, _ = group_tokens_into_words(ids, pieces)
+        texts = decode_word_texts(tf_engine, ids, word_idx)
+        assert texts == ["ændre"]
+        assert "\ufffd" not in texts[0]
