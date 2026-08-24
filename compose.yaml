@@ -1,0 +1,18 @@
+services:
+  crisperwhisper:
+    build:
+      context: .
+    image: crisperwhisper:local
+    environment:
+      HF_HOME: /cache/huggingface
+      CW_MODEL: ${CW_MODEL:-small}
+      CW_BACKEND: transformers
+      CW_DEVICE: cpu
+      CW_COMPUTE_TYPE: float32
+    volumes:
+      - ./audio:/input:ro
+      - ./output:/output
+      - model-cache:/cache/huggingface
+
+volumes:
+  model-cache:

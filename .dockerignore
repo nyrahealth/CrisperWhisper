@@ -1,0 +1,11 @@
+.git
+.github
+.cache
+audio
+__pycache__
+*.egg-info
+*.py[cod]
+.pytest_cache
+build
+dist
+tests
