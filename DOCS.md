@@ -112,10 +112,23 @@ pip install crisperwhisper[convert]
 
 ### Docker
 
+The included Compose setup is portable across Intel and Apple Silicon Macs.
+Because Docker Desktop cannot expose Metal/MPS to Linux containers, it uses
+the Transformers backend on CPU and defaults to the `small` model:
+
 ```bash
-docker run --gpus all nyrahealth/crisperwhisper \
-  transcribe audio.wav --language en --mode verbatim
+docker compose build
+mkdir -p audio
+cp /path/to/audio.wav audio/
+docker compose run --rm crisperwhisper \
+  transcribe /input/audio.wav --language en --mode verbatim
 ```
+
+Model downloads are cached in a named Docker volume. Set `CW_MODEL=turbo`
+(or another model shorthand) before `docker compose run` to override the
+default. Input audio is mounted read-only at `/input`; write files to the
+host's `./output` folder with, for example,
+`--format json --word-timestamps --output /output/result.json`.
 
 ## Quick Start
 

@@ -27,8 +27,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import ctranslate2
 import numpy as np
+
+try:
+    import ctranslate2
+except ModuleNotFoundError as exc:
+    if exc.name != "ctranslate2":
+        raise
+    ctranslate2 = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from crisperwhisper.engine import CT2Engine
@@ -40,6 +46,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _to_fp32_cpu(logits: ctranslate2.StorageView) -> np.ndarray:
+    if ctranslate2 is None:
+        raise ImportError(
+            "CTranslate2 helpers require crisperwhisper[ct2]."
+        )
     return np.array(
         logits.to(ctranslate2.DataType.float32).to_device(ctranslate2.Device.cpu)
     )
