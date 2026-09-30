@@ -140,7 +140,7 @@ class TransformersEngine:
         self.processor = AutoProcessor.from_pretrained(model_name_or_path)
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_name_or_path,
-            torch_dtype=self.torch_dtype,
+            dtype=self.torch_dtype,
             attn_implementation="eager",  # required for output_attentions
             low_cpu_mem_usage=True,
         ).to(self.device)
