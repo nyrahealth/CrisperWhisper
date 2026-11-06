@@ -60,6 +60,26 @@ def _argmax_with_bans(
     return int(arr.argmax())
 
 
+def _argmax_with_bans_and_logprob(
+    logits: ctranslate2.StorageView,
+    suppress_ids: np.ndarray | None,
+    ban_ids: set[int] | None,
+) -> tuple[int, float]:
+    """:func:`_argmax_with_bans` plus the picked token's log-probability under
+    the raw (unmasked) logits, from the same CPU copy."""
+    arr = _to_fp32_cpu(logits).reshape(-1, logits.shape[-1])[0]
+    m = float(arr.max())
+    lse = m + float(np.log(np.exp(arr.astype(np.float64) - m).sum()))
+    raw = arr.copy()
+    if suppress_ids is not None and len(suppress_ids):
+        arr[suppress_ids] = -np.inf
+    if ban_ids:
+        for t in ban_ids:
+            arr[t] = -np.inf
+    tok = int(arr.argmax())
+    return tok, float(raw[tok]) - lse
+
+
 # ---------------------------------------------------------------------------
 # Loop detection — lives in the dependency-free ``loop_detection`` module
 # (the Transformers backend and temperature fallback need it without
@@ -392,7 +412,11 @@ def generate_with_repair_and_attention(
     max_ngram: int = 5,
     max_repairs: int = 3,
     suppress_tokens: list[int] | None = None,
-) -> tuple[list[int], np.ndarray, int]:
+    return_logprobs: bool = False,
+) -> (
+    tuple[list[int], np.ndarray, int]
+    | tuple[list[int], np.ndarray, int, np.ndarray]
+):
     """Greedy decoding with hallucination repair, also collecting the
     per-step cross-attention rows for word-timing extraction.
 
@@ -429,6 +453,12 @@ def generate_with_repair_and_attention(
         ``(len(gen_ids), F_enc)`` float32 array of mean-over-heads
         post-softmax cross-attention, and ``n_repairs`` is the number of
         rewind cycles performed.
+    (gen_ids, attention, n_repairs, logprobs)
+        With ``return_logprobs=True`` (needs a fork build with
+        ``return_token_logprobs``): ``logprobs`` is a float32 array 1-to-1
+        with ``gen_ids``, each token's log-probability under the raw logits
+        of the step that produced it.  It is carried across repairs exactly
+        like the attention rows (``kept_lps`` mirrors ``kept_rows``).
     """
     if detect_reps is None:
         detect_reps = DEFAULT_REPAIR_THRESHOLDS
@@ -444,6 +474,16 @@ def generate_with_repair_and_attention(
     # current ``state.collected_attention`` covers
     # ``generated[len(kept_rows):]``.
     kept_rows: list[np.ndarray] = []
+    # Same invariant for the log-probabilities: ``kept_lps`` covers the
+    # committed prefix, ``cur_lps`` the current segment.
+    kept_lps: list[float] = []
+    cur_lps: list[float] = []
+
+    def _out(generated_local, attn, n_repairs, segment_lps):
+        if not return_logprobs:
+            return generated_local, attn, n_repairs
+        lps = (kept_lps + list(segment_lps))[:len(generated_local)]
+        return generated_local, attn, n_repairs, np.asarray(lps, dtype=np.float32)
 
     def _finalize(state, generated_local: list[int]) -> np.ndarray:
         # Bulk-transfer the current state's rows in a single PCIe copy
@@ -471,7 +511,7 @@ def generate_with_repair_and_attention(
         max_new: int,
         context: list[int],
         block: dict[int, int],
-    ) -> tuple[ctranslate2.WhisperDecoderState, list[int]]:
+    ) -> tuple[ctranslate2.WhisperDecoderState, list[int], list[float]]:
         """Step-wise continuation under persistent n-gram blocking.
 
         Attention rows accumulate in the returned state exactly like the
@@ -479,31 +519,47 @@ def generate_with_repair_and_attention(
         ``forward_step_with_attention`` the next token's), so
         ``_finalize`` needs no special handling.  Per-step logits leave
         the GPU — slower than the bulk C++ path, but this only runs after
-        a repair has already failed once.
+        a repair has already failed once.  The per-token log-probabilities
+        (empty unless ``return_logprobs``) are returned separately, since
+        the step-wise APIs do not fill ``state.collected_logprobs``.
         """
+        pick = (
+            _argmax_with_bans_and_logprob if return_logprobs
+            else lambda *a: (_argmax_with_bans(*a), None)
+        )
+        lps: list[float] = []
         state, logits, _attn0 = engine.prefill_with_attention(encoded, prefix)
         first_bans = set(ban) | _compute_bans(context, block)
-        escape = _argmax_with_bans(logits, sup_arr, first_bans)
+        escape, lp = pick(logits, sup_arr, first_bans)
+        lps.append(lp)
         if escape == eot:
-            return state, [eot]
+            return state, [eot], lps if return_logprobs else []
         out = [escape]
         for _ in range(max_new - 1):
             logits, _attn = engine.forward_step_with_attention(state, out[-1])
             bans = _compute_bans(context + out, block)
-            tok = _argmax_with_bans(logits, sup_arr, bans)
+            tok, lp = pick(logits, sup_arr, bans)
+            lps.append(lp)
             if tok == eot:
                 out.append(eot)
                 break
             out.append(tok)
-        return state, out
+        return state, out, lps if return_logprobs else []
+
+    def _bulk(prefix: list[int], max_new: int, ban_first: list[int]):
+        extra = {"return_token_logprobs": True} if return_logprobs else {}
+        state_local, ids = engine.generate_greedy_with_attention(
+            encoded, prefix,
+            max_new_tokens=max_new,
+            suppress_tokens=suppress_tokens,
+            ban_first_tokens=ban_first,
+            **extra,
+        )
+        lps = list(state_local.collected_logprobs) if return_logprobs else []
+        return state_local, ids, lps
 
     # --- Pass 1: bulk free decode (no bans) --------------------------
-    state, generated = engine.generate_greedy_with_attention(
-        encoded, prompt_tokens,
-        max_new_tokens=max_length,
-        suppress_tokens=suppress_tokens,
-        ban_first_tokens=[],
-    )
+    state, generated, cur_lps = _bulk(prompt_tokens, max_length, [])
 
     # --- Repair loop --------------------------------------------------
     for attempt in range(1, max_repairs + 1):
@@ -511,7 +567,9 @@ def generate_with_repair_and_attention(
             generated, min_ngram=1, max_ngram=max_ngram, reps=detect_reps,
         )
         if hit is None:
-            return generated, _finalize(state, generated), attempt - 1
+            return _out(
+                generated, _finalize(state, generated), attempt - 1, cur_lps,
+            )
 
         loop_start, gram = hit
         n = len(gram)
@@ -540,8 +598,10 @@ def generate_with_repair_and_attention(
             limit = min(n_to_commit, state_arr.shape[0])
             for i in range(limit):
                 kept_rows.append(state_arr[i].copy())
+            kept_lps.extend(cur_lps[:n_to_commit])
         elif n_to_commit < 0:
             kept_rows = kept_rows[:keep_end]
+            kept_lps = kept_lps[:keep_end]
 
         remaining = max_length - len(trimmed)
         if remaining <= 0:
@@ -551,18 +611,15 @@ def generate_with_repair_and_attention(
                 if kept_rows
                 else np.zeros((0, 0), dtype=np.float32)
             )
-            return generated, attn, attempt
+            return _out(generated, attn, attempt, [])
 
         if attempt == 1:
             # Bulk re-decode of the tail, banning the loop starter on the
             # first emitted step only.  All argmax / suppression /
             # attention accumulation happens inside one C++ thread-pool
             # job.  Cheap, and usually one nudge is enough.
-            state, tail = engine.generate_greedy_with_attention(
-                encoded, prompt_tokens + trimmed,
-                max_new_tokens=remaining,
-                suppress_tokens=suppress_tokens,
-                ban_first_tokens=[gram[0]],
+            state, tail, cur_lps = _bulk(
+                prompt_tokens + trimmed, remaining, [gram[0]],
             )
         else:
             # The one-step ban already failed once (the decoder absorbed
@@ -573,7 +630,7 @@ def generate_with_repair_and_attention(
                 "Repair %d: continuing under persistent n-gram blocking",
                 attempt,
             )
-            state, tail = _blocked_continue_with_attention(
+            state, tail, cur_lps = _blocked_continue_with_attention(
                 prompt_tokens + trimmed, {gram[0]}, remaining, trimmed,
                 _block_thresholds(detect_reps, max_ngram),
             )
@@ -593,8 +650,8 @@ def generate_with_repair_and_attention(
                     if kept_rows
                     else np.zeros((0, 0), dtype=np.float32)
                 )
-                return trimmed, attn, attempt
+                return _out(trimmed, attn, attempt, [])
         generated = trimmed + tail
 
     generated = _final_trim(generated, detect_reps, keep_reps)
-    return generated, _finalize(state, generated), max_repairs
+    return _out(generated, _finalize(state, generated), max_repairs, cur_lps)

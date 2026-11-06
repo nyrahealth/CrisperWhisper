@@ -6,6 +6,20 @@ from dataclasses import dataclass
 
 
 @dataclass
+class TokenProbability:
+    """One decoded token of a word and the probability the model gave it.
+
+    ``probability`` is ``exp(log_softmax(raw_logits)[token_id])`` at the step
+    that produced the token: the full-vocabulary softmax of the raw logits,
+    before token suppression or repair bans are applied.
+    """
+
+    token: str
+    token_id: int
+    probability: float
+
+
+@dataclass
 class WordTimestamp:
     """A single word with its start/end timestamps in seconds.
 
@@ -16,11 +30,18 @@ class WordTimestamp:
     stays 1-to-1 with the word segmentation (used by the longform
     overlap-aware boundary drop); such placeholders are filtered out before
     results are returned.
+
+    ``probability`` and ``tokens`` are set only with
+    ``word_confidence=True``: ``probability`` is the mean of
+    ``tokens[i].probability`` (length-fair across BPE splits; the product
+    of those values is the joint probability of the word's tokens).
     """
 
     word: str
     start: float | None
     end: float | None
+    probability: float | None = None
+    tokens: list[TokenProbability] | None = None
 
 
 @dataclass

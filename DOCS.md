@@ -26,8 +26,8 @@ expected, the bare size name works as shorthand
 | CrisperWhisper (v1) | `nyrahealth/CrisperWhisper` | Verbatim only, HuggingFace Transformers backend (deprecated) |
 
 All sizes support verbatim + intended modes, verbatimize, longform, word
-timings, and speculative decoding (ct2 backend). Hotword boosting is a
-Pro-model feature.
+timings, word confidence, and speculative decoding (ct2 backend).
+Hotword boosting is a Pro-model feature.
 
 The standard models are released under a
 [non-commercial research license](https://huggingface.co/nyralabs/CrisperWhisper2.0_large/blob/main/LICENSE.md)
@@ -44,6 +44,7 @@ the `backend=` argument.
 |------------|:-------------------:|:--------------:|
 | Verbatim / intended modes, hotwords (Pro), verbatimize | yes | yes |
 | Word-level timestamps (Viterbi on cross-attention) | yes | yes |
+| Word / token confidence (`word_confidence=True`) | yes | yes |
 | Longform (continuation + LCS strategies) | yes | yes |
 | Hallucination mitigation (rewind/escape repair) | yes | yes |
 | Dual-mode (verbatim+intended in one batched pass) | yes | no |
@@ -144,10 +145,11 @@ model = CrisperWhisperModel("large", backend="ct2")
 # Force pure-torch Transformers (no speculative decoding)
 model = CrisperWhisperModel("large", backend="transformers")
 
-# Word timings, longform and hallucination repair all work the
-# same on either backend:
-result = model.transcribe("audio.wav", word_timestamps=True)
-print(model.backend, [(w.word, w.start, w.end) for w in result.words][:5])
+# Word timings, confidences, longform and hallucination repair all
+# work the same on either backend:
+result = model.transcribe("audio.wav", word_confidence=True)
+print(model.backend, [(w.word, w.start, w.end, w.probability)
+                      for w in result.words][:5])
 ```
 
 ### With Speculative Decoding (1.3-1.4x faster, ct2 only)
@@ -233,18 +235,20 @@ verbatim, intended = model.transcribe_dual(
     language="en",
     modes=("verbatim", "intended"),   # default; order = output order
     word_timestamps=True,             # captured inline for each mode
+    word_confidence=True,             # same pass; per-word probabilities
 )
 
 print(verbatim.text)
 print(intended.text)
 for w in verbatim.words:
-    print(f"{w.start:6.2f} - {w.end:6.2f}  {w.word}")
+    print(f"{w.start:6.2f} - {w.end:6.2f}  {w.word}  p={w.probability:.3f}")
 ```
 
 `transcribe_dual` returns one `TranscriptionResult` per requested mode, in
 the order given. It supports everything `transcribe` does: `hotwords`,
 `word_timestamps` (cross-attention captured inline during the shared pass,
-no extra forward), per-row `hallucination_mitigation`, and longform
+no extra forward), `word_confidence` (token log-probs from the same
+batched decode), per-row `hallucination_mitigation`, and longform
 (`longform_strategy="continuation"` only). It is roughly **1.9x faster
 than two separate `transcribe` calls** (measured ~1.86-1.90x on short and
 longform audio; the GPU has ~96% idle decode compute at batch=1, so the
@@ -436,6 +440,49 @@ path).  Rewound tokens' attention rows are dropped and the re-decoded
 tail carries main-model rows, so the 1-to-1 token↔row invariant is
 preserved.
 
+### Word / token confidence
+
+Pass `word_confidence=True` (implies `word_timestamps=True`) to attach a
+probability to every word, plus the per-token values that word was built
+from. Same flag on both backends, and on `transcribe_dual` /
+`verbatimize`.
+
+```python
+result = model.transcribe("audio.wav", word_confidence=True)
+
+for w in result.words:
+    print(f"{w.start:6.2f}-{w.end:6.2f}  {w.word}  p={w.probability:.3f}")
+    for t in w.tokens:
+        print(f"    {t.token!r}  id={t.token_id}  p={t.probability:.3f}")
+```
+
+`w.probability` is the **mean** of that word's token probabilities
+(length-fair across BPE splits; the same aggregation faster-whisper
+uses). The product of `t.probability` is the joint probability of the
+word's tokens if you want it. Special tokens (EOT, …) are excluded from
+the average.
+
+Each `t.probability` is `exp(log_softmax(raw_logits)[token_id])` at the
+decode step that produced the token: full-vocabulary softmax of the
+**raw** logits, before `suppress_tokens` or repair bans. That matches a
+teacher-forced forward over the same ids.
+
+On `ct2` (`ctranslate2-crisperwhisper>=4.7.1.post4`) the values are
+captured inline in the greedy loop — one extra log-softmax reduction per
+step on the device, then `len(ids)` floats copied out with the segment.
+The transformers backend reads `generate(output_logits=True)`. When the
+library replaces ids (coverage fallback, early-EOT recovery, speculative
+draft tokens) those replacement ids are scored with one teacher-forced
+pass.
+
+Notes:
+
+* v1 models: not supported (`word_confidence=True` warns and is ignored).
+* Longform: `longform_strategy="continuation"` only. Other strategies
+  warn and skip the scores (timestamps still work).
+* Speculative decoding: accepted draft tokens have no main-model logits,
+  so the whole sequence is teacher-forced on the verifier.
+
 ### Verbatimize
 
 > Deep dive: [Closing the verbatim data gap with Verbatimize](https://www.nyra-labs.com/research/verbatimize)
@@ -444,6 +491,11 @@ Transform a clean transcript into verbatim form using audio context:
 
 ```python
 result = model.verbatimize("audio.wav", transcript="the patient has chest pain")
+
+# Word timings + confidences, same flags as transcribe()
+result = model.verbatimize(
+    "audio.wav", "the patient has chest pain", word_confidence=True,
+)
 ```
 
 ### Forced Alignment
@@ -823,14 +875,20 @@ result.duration           # audio duration in seconds
 result.processing_time    # inference time in seconds
 result.chunks             # per-chunk details (longform only)
 result.words              # list[WordTimestamp] when transcribed with
-                          # word_timestamps=True, otherwise None.
-                          # v1 models populate this automatically; v2
-                          # models populate it only when the flag is set.
+                          # word_timestamps=True or word_confidence=True,
+                          # otherwise None.  v1 models populate this
+                          # automatically; v2 models populate it only
+                          # when a flag is set.
 ```
 
-Each entry of `result.words` is a `WordTimestamp(word: str, start:
-float, end: float)`, with `start`/`end` in seconds of the original
-audio (already lifted out of chunk-local coordinates for longform).
+Each entry of `result.words` is a `WordTimestamp(word, start, end)`,
+with `start`/`end` in seconds of the original audio (already lifted out
+of chunk-local coordinates for longform). With `word_confidence=True`
+each word also has:
+
+* `probability: float` — mean of the word's token probabilities
+* `tokens: list[TokenProbability]` — one `(token, token_id, probability)`
+  per (non-special) token of the word
 
 ## Model Conversion
 
@@ -924,6 +982,7 @@ model.transcribe(
     speculative_mode: str = "strict",   # "strict" or "semantic"
     hallucination_mitigation: bool = True,
     word_timestamps: bool = False,      # populate result.words
+    word_confidence: bool = False,      # implies timestamps; per-word/token probs
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,  # None = generation_config default
 ) -> TranscriptionResult
@@ -954,6 +1013,7 @@ model.transcribe_dual(
     max_new_tokens: int = 256,
     hallucination_mitigation: bool = True,   # per-row repair fallback
     word_timestamps: bool = False,           # captured inline per mode
+    word_confidence: bool = False,           # implies timestamps; inline log-probs
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,  # shared across modes
 ) -> tuple[TranscriptionResult, ...]
@@ -971,6 +1031,8 @@ model.verbatimize(
     max_new_tokens: int = 256,
     hallucination_mitigation: bool = True,
     suppress_tokens: list[int] | None = None,
+    word_timestamps: bool = False,
+    word_confidence: bool = False,      # implies timestamps
 ) -> TranscriptionResult
 ```
 

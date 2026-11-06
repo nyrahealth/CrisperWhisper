@@ -101,7 +101,18 @@ class EngineProtocol(Protocol):
         max_length: int = 256,
         hallucination_mitigation: bool = True,
         suppress_tokens: list[int] | None = None,
-    ) -> tuple[list[int], np.ndarray]: ...
+        return_logprobs: bool = False,
+    ) -> (
+        tuple[list[int], np.ndarray]
+        | tuple[list[int], np.ndarray, np.ndarray]
+    ): ...
+
+    def token_logprobs_for_tokens(
+        self,
+        features,
+        prompt_tokens: list[int],
+        gen_ids: list[int],
+    ) -> np.ndarray: ...
 
     # --- cross-attention (word timing) ---------------------------------
     def enable_attention(
