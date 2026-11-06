@@ -498,6 +498,7 @@ class CrisperWhisperModel:
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
+        word_confidence: bool = False,
     ) -> TranscriptionResult:
         """Transcribe audio.
 
@@ -588,6 +589,19 @@ class CrisperWhisperModel:
             list overrides it for this call, and ``[]`` disables suppression
             entirely.  Applied identically on both backends and on every
             decode path (greedy, repair, speculative, temperature fallback).
+        word_confidence
+            If ``True`` (v2 only; implies ``word_timestamps=True``), each
+            entry of ``TranscriptionResult.words`` also carries
+            ``probability`` -- the mean of the word's token probabilities --
+            and ``tokens``, one :class:`~crisperwhisper.result.TokenProbability`
+            per token.  Token probabilities are the full-vocabulary softmax of
+            the raw logits at the step that produced the token (before token
+            suppression), captured inline during the greedy decode on both
+            backends; tokens the decode did not produce itself (temperature
+            fallback, early-EOT recovery, speculative decoding) are scored
+            with one teacher-forced pass.  Supported for short audio, the
+            ``continuation`` longform strategy, :meth:`transcribe_dual`, and
+            :meth:`verbatimize`.
 
         Returns
         -------
@@ -595,7 +609,14 @@ class CrisperWhisperModel:
         """
         suppress_tokens = _sanitize_suppress_tokens(suppress_tokens)
         self._warn_if_hotwords_unsupported(hotwords)
+        if word_confidence:
+            word_timestamps = True
         if self._model_version == 1:
+            if word_confidence:
+                warnings.warn(
+                    "word_confidence=True is not supported for v1 models and "
+                    "is ignored.", UserWarning, stacklevel=2,
+                )
             return self._transcribe_v1(
                 audio, language=language, mode=mode,
                 hotwords=hotwords, sr=sr,
@@ -630,6 +651,7 @@ class CrisperWhisperModel:
             word_timestamps=word_timestamps,
             alignment_heads=alignment_heads,
             suppress_tokens=suppress_tokens,
+            word_confidence=word_confidence,
         )
 
     def transcribe_dual(
@@ -653,6 +675,7 @@ class CrisperWhisperModel:
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
+        word_confidence: bool = False,
     ) -> tuple[TranscriptionResult, ...]:
         """Transcribe one audio in several modes in a single batched GPU pass.
 
@@ -699,6 +722,10 @@ class CrisperWhisperModel:
             Token IDs to suppress during decoding (shared across modes).
             ``None`` uses the model's ``generation_config`` default; ``[]``
             disables suppression.
+        word_confidence
+            If ``True`` (implies ``word_timestamps=True``), each mode's words
+            carry ``probability`` and ``tokens`` (see :meth:`transcribe`).
+            Captured inline in the same batched pass.
 
         longform_strategy
             Longform strategy for audio > 30s.  Only ``"continuation"`` is
@@ -727,6 +754,8 @@ class CrisperWhisperModel:
         re-decode of its own recovery.
         """
         self._warn_if_hotwords_unsupported(hotwords)
+        if word_confidence:
+            word_timestamps = True
         if self._model_version == 1:
             raise NotImplementedError(
                 "transcribe_dual() requires a CrisperWhisper v2 model "
@@ -777,6 +806,7 @@ class CrisperWhisperModel:
                 alignment_heads=alignment_heads,
                 temperature_fallback=temperature_fallback,
                 suppress_tokens=suppress_tokens,
+                word_confidence=word_confidence,
             )
             per_mode = [(text, None, words) for text, words in per_mode]
         else:
@@ -796,6 +826,7 @@ class CrisperWhisperModel:
                 word_timestamps=word_timestamps,
                 alignment_heads=alignment_heads,
                 suppress_tokens=suppress_tokens,
+                word_confidence=word_confidence,
             )
 
         elapsed = time.perf_counter() - t0
@@ -967,6 +998,7 @@ class CrisperWhisperModel:
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
+        word_confidence: bool = False,
     ) -> TranscriptionResult:
         """Full v2 transcription pipeline (CT2 or transformers backend)."""
         lf_config = self._validated_longform_config(
@@ -1042,9 +1074,18 @@ class CrisperWhisperModel:
                 alignment_heads=alignment_heads,
                 temperature_fallback=temperature_fallback,
                 suppress_tokens=suppress_tokens,
+                word_confidence=word_confidence,
             )
             chunks = None
         else:
+            if word_confidence and longform_strategy != "continuation":
+                warnings.warn(
+                    f"word_confidence=True is not supported with "
+                    f"longform_strategy={longform_strategy!r}; words will "
+                    "have no probabilities. Use longform_strategy="
+                    "'continuation' (the default).",
+                    UserWarning, stacklevel=3,
+                )
             if longform_strategy not in longform_strategies:
                 raise ValueError(
                     f"Unknown longform_strategy: {longform_strategy!r}. "
@@ -1084,6 +1125,7 @@ class CrisperWhisperModel:
                         hallucination_mitigation=hallucination_mitigation,
                         alignment_heads=alignment_heads,
                         suppress_tokens=suppress_tokens,
+                        word_confidence=word_confidence,
                     )
                 else:
                     # continuation_transcribe needs alignment_heads too: with
@@ -1128,6 +1170,7 @@ class CrisperWhisperModel:
         suppress_tokens: list[int] | None = None,
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
+        word_confidence: bool = False,
     ) -> TranscriptionResult:
         """Transform an intended transcript into verbatim using audio context.
 
@@ -1157,12 +1200,17 @@ class CrisperWhisperModel:
         alignment_heads
             Explicit ``[(layer, head), ...]`` selection for attention;
             defaults to the model's stored alignment heads.
+        word_confidence
+            If ``True`` (implies ``word_timestamps=True``), each word also
+            carries ``probability`` and ``tokens`` (see :meth:`transcribe`).
 
         Returns
         -------
         TranscriptionResult with ``mode="verbatimize"`` (and ``words`` set
         when ``word_timestamps=True``).
         """
+        if word_confidence:
+            word_timestamps = True
         if self._model_version == 1:
             raise NotImplementedError(
                 "verbatimize() requires a CrisperWhisper v2 model "
@@ -1188,20 +1236,23 @@ class CrisperWhisperModel:
 
         words: list = []
         if word_timestamps:
+            from crisperwhisper.confidence import decode_with_attention
             from crisperwhisper.word_timing import extract_word_timings
 
             self._engine.enable_attention(alignment_heads)
             features, mel = self._engine.extract_features_with_mel(audio_array)
-            gen_ids, attention = self._engine.generate_with_repair_and_attention(
-                features, prompt_tokens,
+            gen_ids, attention, logprobs = decode_with_attention(
+                self._engine, features, prompt_tokens,
                 max_length=max_new_tokens,
                 hallucination_mitigation=hallucination_mitigation,
                 suppress_tokens=suppress_tokens,
+                want_logprobs=word_confidence,
             )
             words = extract_word_timings(
                 self._engine, gen_ids, attention, mel,
                 audio_duration_s=min(duration, 30.0),
                 language=language,
+                token_logprobs=logprobs,
             )
         else:
             features = self._engine.extract_features(audio_array)
@@ -1325,6 +1376,7 @@ class CrisperWhisperModel:
         alignment_heads: list[tuple[int, int]] | None = None,
         temperature_fallback: bool = True,
         suppress_tokens: list[int] | None = None,
+        word_confidence: bool = False,
     ):
         """Transcribe audio <= 30s (v2 backend).
 
@@ -1333,9 +1385,14 @@ class CrisperWhisperModel:
         list.  The audio is clipped/padded to the 30s window before
         feature extraction; word timestamps are reported in seconds of
         that window (which equals seconds of the original audio for
-        utterances <= 30s).
+        utterances <= 30s).  With ``word_confidence`` (requires
+        ``word_timestamps``) each word also carries its token probabilities.
         """
         from crisperwhisper.audio import SAMPLE_RATE as _SR
+        from crisperwhisper.confidence import (
+            decode_with_attention,
+            logprobs_for_final_ids,
+        )
         from crisperwhisper.fallback import decode_with_coverage_fallback
         from crisperwhisper.prompt import strip_prompt_artifacts
         from crisperwhisper.word_timing import extract_word_timings
@@ -1350,27 +1407,22 @@ class CrisperWhisperModel:
         if word_timestamps:
             engine.enable_attention(alignment_heads)
             features, mel = engine.extract_features_with_mel(audio)
-            if hasattr(engine, "generate_with_attention"):
-                # Speculative decoder: capture draft/main attention per
-                # Option B (hallucination repair is applied post-hoc inside).
-                gen_ids, attention = engine.generate_with_attention(
-                    features, prompt_tokens,
-                    max_length=max_new_tokens,
-                    hallucination_mitigation=hallucination_mitigation,
-                    suppress_tokens=suppress_tokens,
-                )
-            else:
-                gen_ids, attention = engine.generate_with_repair_and_attention(
-                    features, prompt_tokens,
-                    max_length=max_new_tokens,
-                    hallucination_mitigation=hallucination_mitigation,
-                    suppress_tokens=suppress_tokens,
-                )
+            gen_ids, attention, logprobs = decode_with_attention(
+                engine, features, prompt_tokens,
+                max_length=max_new_tokens,
+                hallucination_mitigation=hallucination_mitigation,
+                suppress_tokens=suppress_tokens,
+                want_logprobs=word_confidence,
+            )
+            decoded_ids = gen_ids
             gen_ids, attention = decode_with_coverage_fallback(
                 engine, features, mel, prompt_tokens, gen_ids, attention,
                 max_length=max_new_tokens, want_attention=True,
                 enabled=temperature_fallback, ref_prompt_tokens=sibling_prompt,
                 suppress_tokens=suppress_tokens,
+            )
+            logprobs = logprobs_for_final_ids(
+                engine, features, prompt_tokens, gen_ids, decoded_ids, logprobs,
             )
             text = engine.decode_tokens(gen_ids, skip_special=True)
             text = strip_prompt_artifacts(text)
@@ -1379,6 +1431,7 @@ class CrisperWhisperModel:
                 engine, gen_ids, attention, mel,
                 audio_duration_s=audio_duration_s,
                 language=prompt_builder.language,
+                token_logprobs=logprobs,
             )
             return text, words
 
@@ -1414,6 +1467,7 @@ class CrisperWhisperModel:
         alignment_heads: list[tuple[int, int]] | None = None,
         temperature_fallback: bool = True,
         suppress_tokens: list[int] | None = None,
+        word_confidence: bool = False,
     ):
         """Batched dual-mode transcription for audio <= 30s (v2 backend).
 
@@ -1427,6 +1481,7 @@ class CrisperWhisperModel:
         ``words`` is empty unless ``word_timestamps=True``.
         """
         from crisperwhisper.audio import SAMPLE_RATE as _SR
+        from crisperwhisper.confidence import logprobs_for_final_ids
         from crisperwhisper.fallback import (
             decode_with_coverage_fallback,
             word_count,
@@ -1449,14 +1504,17 @@ class CrisperWhisperModel:
         if word_timestamps:
             engine.enable_attention(alignment_heads)
 
-        gens, attns = engine.generate_dual_greedy(
+        decoded = engine.generate_dual_greedy(
             features1, prompts,
             max_length=max_new_tokens,
             hallucination_mitigation=hallucination_mitigation,
             word_timestamps=word_timestamps,
             features_single=features1,
             suppress_tokens=suppress_tokens,
+            **({"return_logprobs": True} if word_confidence else {}),
         )
+        gens, attns = decoded[0], decoded[1]
+        row_lps = decoded[2] if word_confidence else [None] * len(gens)
 
         audio_duration_s = min(len(audio) / _SR, 30.0)
 
@@ -1470,11 +1528,15 @@ class CrisperWhisperModel:
             ref_n = max(
                 (base_counts[k] for k in range(len(gens)) if k != i), default=0,
             )
+            decoded_ids = gen_ids
             gen_ids, attention = decode_with_coverage_fallback(
                 engine, features1, mel, prompts[i], gen_ids, attention,
                 max_length=max_new_tokens, want_attention=word_timestamps,
                 enabled=temperature_fallback, ref_word_count=ref_n,
                 suppress_tokens=suppress_tokens,
+            )
+            logprobs = logprobs_for_final_ids(
+                engine, features1, prompts[i], gen_ids, decoded_ids, row_lps[i],
             )
             text = strip_prompt_artifacts(
                 engine.decode_tokens(gen_ids, skip_special=True)
@@ -1484,6 +1546,7 @@ class CrisperWhisperModel:
                     engine, gen_ids, attention, mel,
                     audio_duration_s=audio_duration_s,
                     language=prompt_builder.language,
+                    token_logprobs=logprobs,
                 )
             else:
                 words = []

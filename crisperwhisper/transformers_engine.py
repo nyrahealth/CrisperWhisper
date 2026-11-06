@@ -72,6 +72,9 @@ class _FirstStepBan:
 
     def __call__(self, input_ids, scores):  # noqa: D401 - HF processor proto
         if self.banned and input_ids.shape[1] == self.prefix_len:
+            # Not in place: ``generate(output_logits=True)`` stores the
+            # tensor this processor receives as the step's raw logits.
+            scores = scores.clone()
             scores[:, self.banned] = float("-inf")
         return scores
 
@@ -434,20 +437,28 @@ class TransformersEngine:
         *,
         ban_first: set[int] | None = None,
         suppress_tokens: list[int] | None = None,
-    ) -> tuple[list[int], np.ndarray]:
+        return_logprobs: bool = False,
+    ):
         """Greedy decode forcing ``prefix``, capturing cross-attention inline.
 
         Single forward-generation pass (no teacher-forced re-run): returns
         ``(gen_ids, attention)`` where ``attention`` is the head-averaged
         ``[len(gen_ids), F_enc]`` matrix, 1-to-1 with ``gen_ids`` (row ``k``
         predicts ``gen_ids[k]``).  Requires :meth:`enable_attention` first.
+
+        With ``return_logprobs`` also returns a float32 array 1-to-1 with
+        ``gen_ids``: each token's log-softmax under the raw logits of its step
+        (``generate(output_logits=True)``, before suppression and bans).
         """
         import torch
         from transformers import LogitsProcessorList
 
         heads = self._resolved_alignment_heads()
         if max_new <= 0:
-            return [], np.zeros((0, 0), dtype=np.float32)
+            empty = np.zeros((0, 0), dtype=np.float32)
+            if return_logprobs:
+                return [], empty, np.zeros((0,), dtype=np.float32)
+            return [], empty
 
         dec = torch.tensor([list(prefix)], device=self.device, dtype=torch.long)
         sup = self._resolve_suppress(suppress_tokens)
@@ -462,6 +473,8 @@ class TransformersEngine:
             use_cache=True,
             suppress_tokens=list(sup),
         )
+        if return_logprobs:
+            kwargs["output_logits"] = True
         if ban_first:
             procs = LogitsProcessorList()
             procs.append(_FirstStepBan(len(prefix), list(ban_first)))
@@ -475,7 +488,20 @@ class TransformersEngine:
         attention = self._stack_step_attention(
             out.cross_attentions, heads, len(gen_ids),
         )
-        return gen_ids, attention
+        if not return_logprobs:
+            return gen_ids, attention
+        logprobs = np.zeros((0,), dtype=np.float32)
+        if gen_ids:
+            steps = torch.stack(
+                [lg[0].float() for lg in out.logits[: len(gen_ids)]], dim=0,
+            )
+            ids_t = torch.tensor(gen_ids, device=steps.device, dtype=torch.long)
+            logprobs = (
+                torch.log_softmax(steps, dim=-1)
+                .gather(1, ids_t[:, None])[:, 0]
+                .cpu().numpy().astype(np.float32)
+            )
+        return gen_ids, attention, logprobs
 
     def generate(
         self,
@@ -821,7 +847,8 @@ class TransformersEngine:
         max_ngram: int = 5,
         max_repairs: int = 3,
         suppress_tokens: list[int] | None = None,
-    ) -> tuple[list[int], np.ndarray]:
+        return_logprobs: bool = False,
+    ):
         """Greedy decode with optional repair, capturing cross-attention
         **inline during generation** (single pass -- no teacher-forced re-run),
         mirroring the CT2 backend's on-the-fly capture.
@@ -832,13 +859,28 @@ class TransformersEngine:
         banned, again capturing attention inline, then concatenated -- so the
         common zero-repair case is exactly one generation pass.
 
+        Returns ``(gen_ids, attention)``, or ``(gen_ids, attention, logprobs)``
+        with ``return_logprobs=True``; the log-probabilities are carried across
+        repairs like the attention rows (see :meth:`_run_generate_with_attention`).
+
         Requires :meth:`enable_attention` (or stored alignment heads).
         """
-        if not hallucination_mitigation:
-            return self._run_generate_with_attention(
-                features, prompt_tokens, max_length,
+        def _decode(prefix, max_new, ban_first=None):
+            out = self._run_generate_with_attention(
+                features, prefix, max_new,
+                ban_first=ban_first,
                 suppress_tokens=suppress_tokens,
+                return_logprobs=return_logprobs,
             )
+            if return_logprobs:
+                return out
+            return out[0], out[1], np.zeros((0,), dtype=np.float32)
+
+        def _ret(ids, attention, lps):
+            return (ids, attention, lps) if return_logprobs else (ids, attention)
+
+        if not hallucination_mitigation:
+            return _ret(*_decode(prompt_tokens, max_length))
 
         from crisperwhisper.loop_detection import (
             DEFAULT_REPAIR_THRESHOLDS,
@@ -848,10 +890,7 @@ class TransformersEngine:
         if detect_reps is None:
             detect_reps = DEFAULT_REPAIR_THRESHOLDS
 
-        generated, attn = self._run_generate_with_attention(
-            features, prompt_tokens, max_length,
-            suppress_tokens=suppress_tokens,
-        )
+        generated, attn, lps = _decode(prompt_tokens, max_length)
 
         for attempt in range(1, max_repairs + 1):
             hit = find_token_loop(
@@ -865,6 +904,7 @@ class TransformersEngine:
             keep_end = loop_start + n * keep_reps
             trimmed = generated[:keep_end]
             kept_attn = attn[:keep_end]
+            kept_lps = lps[:keep_end]
             remaining = max_length - len(trimmed)
 
             reps_for_log = (
@@ -878,13 +918,11 @@ class TransformersEngine:
             )
 
             if remaining <= 0:
-                generated, attn = trimmed, kept_attn
+                generated, attn, lps = trimmed, kept_attn, kept_lps
                 break
 
-            tail_ids, tail_attn = self._run_generate_with_attention(
-                features, list(prompt_tokens) + trimmed, remaining,
-                ban_first={gram[0]},
-                suppress_tokens=suppress_tokens,
+            tail_ids, tail_attn, tail_lps = _decode(
+                list(prompt_tokens) + trimmed, remaining, ban_first={gram[0]},
             )
             generated = trimmed + tail_ids
             if kept_attn.size == 0:
@@ -893,5 +931,39 @@ class TransformersEngine:
                 attn = kept_attn
             else:
                 attn = np.concatenate([kept_attn, tail_attn], axis=0)
+            lps = np.concatenate([kept_lps, tail_lps])
 
-        return generated, attn
+        return _ret(generated, attn, lps)
+
+    def token_logprobs_for_tokens(
+        self,
+        features,
+        prompt_tokens: list[int],
+        gen_ids: list[int],
+    ) -> np.ndarray:
+        """Teacher-forced log-probability of each token in ``gen_ids``.
+
+        Same values as the inline capture (log-softmax of the raw logits at
+        the position predicting each token, before suppression), from one
+        forward pass.  Used for ids the decode did not produce itself
+        (coverage fallback, early-EOT recovery).
+        """
+        import torch
+
+        gen_ids = [int(t) for t in gen_ids]
+        if not gen_ids:
+            return np.zeros((0,), dtype=np.float32)
+        full = list(prompt_tokens) + gen_ids
+        dec = torch.tensor([full], device=self.device, dtype=torch.long)
+        with torch.no_grad():
+            out = self.model(
+                input_features=features, decoder_input_ids=dec, use_cache=False,
+            )
+        start = len(prompt_tokens) - 1
+        logits = out.logits[0, start:start + len(gen_ids)].float()
+        ids_t = torch.tensor(gen_ids, device=logits.device, dtype=torch.long)
+        return (
+            torch.log_softmax(logits, dim=-1)
+            .gather(1, ids_t[:, None])[:, 0]
+            .cpu().numpy().astype(np.float32)
+        )

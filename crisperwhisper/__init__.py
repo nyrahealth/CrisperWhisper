@@ -14,6 +14,7 @@ from crisperwhisper.model import (  # noqa: E402
 from crisperwhisper.result import (  # noqa: E402
     TranscriptionResult,
     ChunkResult,
+    TokenProbability,
     WordTimestamp,
 )
 
@@ -21,11 +22,12 @@ __all__ = [
     "CrisperWhisperModel",
     "TranscriptionResult",
     "ChunkResult",
+    "TokenProbability",
     "WordTimestamp",
     "DEFAULT_MODEL",
     "OFFICIAL_MODELS",
 ]
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 
 
 def check_speculative_support() -> None:

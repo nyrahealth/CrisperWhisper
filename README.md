@@ -125,10 +125,10 @@ print(result.text)
 # Intended: the clean, readable version
 clean = model.transcribe("meeting.wav", language="en", mode="intended")
 
-# Word-level timestamps
-result = model.transcribe("meeting.wav", language="en", word_timestamps=True)
+# Word-level timestamps (and confidences)
+result = model.transcribe("meeting.wav", language="en", word_confidence=True)
 for w in result.words:
-    print(f"{w.start:6.2f}-{w.end:6.2f}  {w.word}")
+    print(f"{w.start:6.2f}-{w.end:6.2f}  {w.word}  p={w.probability:.2f}")
 
 # Verbatimize: upgrade an existing clean transcript with the
 # disfluencies that are actually in the audio
@@ -187,6 +187,7 @@ Everything below works out of the box and is covered in depth in
 |--------|--------------|
 | `mode="verbatim" / "intended"` | Choose what-was-said vs. what-was-meant per call |
 | `word_timestamps=True` | Per-word start/end times from supervised cross-attention alignment |
+| `word_confidence=True` | Per-word (and per-token) probabilities on both backends; implies timestamps |
 | `hotwords=[...]` | Bias recognition toward names and rare terms (**Pro models only**) |
 | `model.transcribe_dual(...)` | Verbatim **and** intended in one pass (ct2) |
 | `model.verbatimize(audio, transcript)` | Insert real disfluencies into a trusted clean transcript |
@@ -217,7 +218,8 @@ Each mechanism has a deep-dive post:
 ## Documentation
 
 [DOCS.md](DOCS.md) covers the full API: backends and their trade-offs,
-every `transcribe()` option, dual-mode transcription, forced alignment,
+every `transcribe()` option (including word timestamps and confidence),
+dual-mode transcription, forced alignment,
 longform strategies, speculative-K tuning, hallucination-repair thresholds,
 quantization, model conversion, and the result object.
 

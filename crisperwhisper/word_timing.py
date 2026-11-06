@@ -19,11 +19,12 @@ it stays inside the slim ``crisperwhisper`` package surface.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from dataclasses import replace
+from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from crisperwhisper.result import WordTimestamp
+from crisperwhisper.result import TokenProbability, WordTimestamp
 
 FRAME_DURATION_S = 0.02
 
@@ -39,10 +40,8 @@ def monotonize_words(words: List[WordTimestamp]) -> None:
     for j in range(1, len(words)):
         prev_end = words[j - 1].end
         if words[j].start < prev_end:
-            words[j] = WordTimestamp(
-                word=words[j].word,
-                start=prev_end,
-                end=max(prev_end, words[j].end),
+            words[j] = replace(
+                words[j], start=prev_end, end=max(prev_end, words[j].end),
             )
 
 
@@ -231,6 +230,43 @@ def decode_word_texts(
         ids = [int(token_ids[i]) for i in idxs]
         texts.append(engine.decode_tokens(ids, skip_special=True).strip())
     return texts
+
+
+def word_token_probabilities(
+    token_ids: Sequence[int],
+    token_pieces: Sequence[str],
+    token_logprobs: Sequence[float],
+    word_token_indices: List[List[int]],
+) -> List[Tuple[float | None, List[TokenProbability]]]:
+    """Per-word ``(probability, tokens)`` from per-token log-probabilities.
+
+    ``token_logprobs`` is 1-to-1 with ``token_ids``.  A word's probability is
+    the arithmetic mean of its token probabilities (the same length-fair
+    aggregation faster-whisper uses); the per-token values stay on
+    ``tokens``.  An empty index list (e.g. a word of only special ids)
+    yields ``(None, [])``.
+    """
+    if len(token_logprobs) != len(token_ids):
+        raise ValueError(
+            f"token_logprobs has {len(token_logprobs)} entries for "
+            f"{len(token_ids)} token ids"
+        )
+    out: List[Tuple[float | None, List[TokenProbability]]] = []
+    for idxs in word_token_indices:
+        tokens = [
+            TokenProbability(
+                token=token_pieces[i],
+                token_id=int(token_ids[i]),
+                probability=float(np.exp(token_logprobs[i])),
+            )
+            for i in idxs
+        ]
+        if not tokens:
+            out.append((None, []))
+            continue
+        mean = float(sum(t.probability for t in tokens) / len(tokens))
+        out.append((mean, tokens))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +565,7 @@ def extract_word_timings(
     split_gap_max_s: float = 0.1,
     keep_unplaceable: bool = False,
     language: Optional[str] = None,
+    token_logprobs: Optional[Sequence[float]] = None,
 ) -> List[WordTimestamp]:
     """Build a list of :class:`WordTimestamp`s from cross-attention.
 
@@ -616,6 +653,10 @@ def extract_word_timings(
         switches from space boundaries to complete-codepoint boundaries
         (:func:`group_tokens_into_words_unicode`); all other values (or
         ``None``) keep the space-based segmentation.
+    token_logprobs
+        Per-token log-probabilities, 1-to-1 with ``gen_ids``.  When given,
+        each word gets ``probability`` (mean of its token probabilities) and
+        ``tokens`` (one :class:`TokenProbability` per token).
 
     Returns
     -------
@@ -638,6 +679,17 @@ def extract_word_timings(
     if not word_token_indices:
         return []
     word_texts = decode_word_texts(engine, gen_ids, word_token_indices)
+    if token_logprobs is not None:
+        # The CT2 tokenizer decodes special ids (e.g. EOT) to "", which the
+        # grouping above folds into the preceding word.
+        special = set(getattr(engine, "all_special_ids", ()) or ())
+        word_probs = word_token_probabilities(
+            gen_ids, tok_pieces, token_logprobs,
+            [[i for i in idxs if int(gen_ids[i]) not in special]
+             for idxs in word_token_indices],
+        )
+    else:
+        word_probs = [(None, None)] * len(word_texts)
 
     # Frame window for alignment. By default we use the FULL encoder window and
     # let the Viterbi blank states absorb the silent (padding) region.
@@ -691,7 +743,11 @@ def extract_word_timings(
     for idx, (word, (start, end)) in enumerate(zip(word_texts, word_timings)):
         if start is None or end is None:
             continue
-        placed.append(WordTimestamp(word=word, start=float(start), end=float(end)))
+        prob, tokens = word_probs[idx]
+        placed.append(WordTimestamp(
+            word=word, start=float(start), end=float(end),
+            probability=prob, tokens=tokens,
+        ))
         placed_idx.append(idx)
 
     if split_gap_max_s and split_gap_max_s > 0:
@@ -703,7 +759,8 @@ def extract_word_timings(
     # 1-to-1 with the word segmentation: re-insert placeholders (None timings)
     # for words the Viterbi could not place, preserving order.
     full: List[WordTimestamp] = [
-        WordTimestamp(word=w, start=None, end=None) for w in word_texts
+        WordTimestamp(word=w, start=None, end=None, probability=p, tokens=t)
+        for w, (p, t) in zip(word_texts, word_probs)
     ]
     for wt, idx in zip(placed, placed_idx):
         full[idx] = wt

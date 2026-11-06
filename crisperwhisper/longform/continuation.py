@@ -9,6 +9,7 @@ each chunk's prompt includes the last K confirmed words from previous chunks.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -191,9 +192,13 @@ def continuation_transcribe_with_word_timestamps(
     hallucination_mitigation: bool = True,
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,
+    word_confidence: bool = False,
 ) -> tuple[str, list[ChunkResult], list[WordTimestamp]]:
     """Continuation longform that also returns per-word timestamps in the
     coordinate system of the original audio.
+
+    With ``word_confidence`` each word also carries ``probability`` and
+    ``tokens`` (see :mod:`crisperwhisper.confidence`).
 
     The cross-attention path is configured once via
     ``engine.enable_attention(alignment_heads)``.  Each chunk:
@@ -213,6 +218,11 @@ def continuation_transcribe_with_word_timestamps(
     monotonic at chunk seams even when Viterbi places a word slightly
     before its predecessor's tail.
     """
+    from crisperwhisper.confidence import (
+        decode_with_attention,
+        logprobs_for_final_ids,
+        teacher_forced_logprobs,
+    )
     from crisperwhisper.word_timing import extract_word_timings
 
     engine.enable_attention(alignment_heads)
@@ -256,20 +266,14 @@ def continuation_transcribe_with_word_timestamps(
         # Option B path (with built-in hallucination repair); plain
         # engines use generate_with_repair_and_attention.  Both return a
         # token list + a 1-to-1 ``[T, F_enc]`` attention matrix.
-        if hasattr(engine, "generate_with_attention"):
-            gen_ids, attention = engine.generate_with_attention(
-                features, prompt_tokens,
-                max_length=config.max_new_tokens,
-                hallucination_mitigation=hallucination_mitigation,
-                suppress_tokens=suppress_tokens,
-            )
-        else:
-            gen_ids, attention = engine.generate_with_repair_and_attention(
-                features, prompt_tokens,
-                max_length=config.max_new_tokens,
-                hallucination_mitigation=hallucination_mitigation,
-                suppress_tokens=suppress_tokens,
-            )
+        gen_ids, attention, logprobs = decode_with_attention(
+            engine, features, prompt_tokens,
+            max_length=config.max_new_tokens,
+            hallucination_mitigation=hallucination_mitigation,
+            suppress_tokens=suppress_tokens,
+            want_logprobs=word_confidence,
+        )
+        decoded_ids = gen_ids
 
         # Recover collapsed chunks via escalating-temperature re-decode.  Single
         # mode: mel pre-filter, confirmed against the sibling-mode decode.
@@ -279,6 +283,9 @@ def continuation_transcribe_with_word_timestamps(
             enabled=config.temperature_fallback,
             ref_prompt_tokens=sibling_prompt,
             suppress_tokens=suppress_tokens,
+        )
+        logprobs = logprobs_for_final_ids(
+            engine, features, prompt_tokens, gen_ids, decoded_ids, logprobs,
         )
 
         # Extract chunk-local word timings, kept 1-to-1 with the word
@@ -290,6 +297,7 @@ def continuation_transcribe_with_word_timestamps(
             audio_duration_s=chunk_dur,
             keep_unplaceable=True,
             language=prompt_builder.language,
+            token_logprobs=logprobs,
         )
 
         # Recover a context-conditioned early EOT (large_pro truncates at a
@@ -309,11 +317,16 @@ def continuation_transcribe_with_word_timestamps(
                 attention = engine.cross_attention_for_tokens(
                     features, prompt_tokens, gen_ids,
                 )
+                if logprobs is not None:
+                    logprobs = teacher_forced_logprobs(
+                        engine, features, prompt_tokens, gen_ids,
+                    )
                 word_ts_local = extract_word_timings(
                     engine, gen_ids, attention, mel,
                     audio_duration_s=chunk_dur,
                     keep_unplaceable=True,
                     language=prompt_builder.language,
+                    token_logprobs=logprobs,
                 )
 
         words = [wt.word for wt in word_ts_local]
@@ -346,8 +359,8 @@ def continuation_transcribe_with_word_timestamps(
         for wt in safe_word_ts:
             if wt.start is None or wt.end is None:
                 continue
-            global_word_timestamps.append(WordTimestamp(
-                word=wt.word,
+            global_word_timestamps.append(replace(
+                wt,
                 start=round(float(wt.start) + start_sec, 3),
                 end=round(float(wt.end) + start_sec, 3),
             ))
@@ -386,6 +399,7 @@ def _decode_chunk_multi(
     hallucination_mitigation: bool,
     word_timestamps: bool,
     suppress_tokens: list[int] | None = None,
+    want_logprobs: bool = False,
 ):
     """Decode several per-mode prompts on one shared audio chunk in a single
     batched pass.
@@ -399,22 +413,25 @@ def _decode_chunk_multi(
     decoding each prompt on its own, so *every* chunk batches -- not just the
     ones whose contexts happen to tokenize to the same length.
 
-    Returns a list of ``(gen_ids, attention | None)`` aligned with
-    ``prompts`` (attention is a ``[len(gen_ids), F_enc]`` matrix when
-    ``word_timestamps`` is set).
+    Returns a list of ``(gen_ids, attention | None, logprobs | None)``
+    aligned with ``prompts`` (attention is a ``[len(gen_ids), F_enc]`` matrix
+    when ``word_timestamps`` is set; logprobs 1-to-1 with ``gen_ids`` when
+    ``want_logprobs`` is set).
     """
-    gens, attns = engine.generate_dual_greedy(
+    decoded = engine.generate_dual_greedy(
         features_single, prompts,
         max_length=max_length,
         hallucination_mitigation=hallucination_mitigation,
         word_timestamps=word_timestamps,
         features_single=features_single,
         suppress_tokens=suppress_tokens,
+        **({"return_logprobs": True} if want_logprobs else {}),
     )
-    results: list[tuple[list[int], object]] = []
+    gens, attns = decoded[0], decoded[1]
+    results: list[tuple[list[int], object, object]] = []
     for i in range(len(prompts)):
         attention = attns[i] if (word_timestamps and attns is not None) else None
-        results.append((gens[i], attention))
+        results.append((gens[i], attention, decoded[2][i] if want_logprobs else None))
     return results
 
 
@@ -430,6 +447,7 @@ def continuation_transcribe_dual(
     word_timestamps: bool = False,
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,
+    word_confidence: bool = False,
 ) -> list[tuple[str, list[ChunkResult], list[WordTimestamp]]]:
     """Continuation longform for several modes at once (one shared decode).
 
@@ -443,8 +461,16 @@ def continuation_transcribe_dual(
     :func:`continuation_transcribe_with_word_timestamps`) once per mode.
 
     Returns one ``(text, chunk_results, words)`` tuple per mode, in order.
+    With ``word_confidence`` (requires ``word_timestamps``) the words carry
+    ``probability`` and ``tokens``.
     """
+    from crisperwhisper.confidence import (
+        logprobs_for_final_ids,
+        teacher_forced_logprobs,
+    )
     from crisperwhisper.word_timing import extract_word_timings
+
+    word_confidence = word_confidence and word_timestamps
 
     # Word timings are needed either to surface to the caller or to drive the
     # overlap-aware boundary drop; capture cross-attention when either applies.
@@ -498,6 +524,7 @@ def continuation_transcribe_dual(
             hallucination_mitigation=hallucination_mitigation,
             word_timestamps=capture_attn,
             suppress_tokens=suppress_tokens,
+            want_logprobs=word_confidence,
         )
 
         # Both modes are already decoded -- gate each row on the discrepancy
@@ -505,7 +532,8 @@ def continuation_transcribe_dual(
         base_counts = [word_count(engine, decoded[j][0]) for j in range(n_modes)]
 
         for j, mode in enumerate(modes):
-            gen_ids, attention = decoded[j]
+            gen_ids, attention, logprobs = decoded[j]
+            decoded_ids = gen_ids
 
             ref_n = max(
                 (base_counts[k] for k in range(n_modes) if k != j), default=0,
@@ -516,6 +544,9 @@ def continuation_transcribe_dual(
                 enabled=config.temperature_fallback,
                 ref_word_count=ref_n,
                 suppress_tokens=suppress_tokens,
+            )
+            logprobs = logprobs_for_final_ids(
+                engine, features1, prompts[j], gen_ids, decoded_ids, logprobs,
             )
 
             # When attention was captured, the timing pipeline's word
@@ -528,6 +559,7 @@ def continuation_transcribe_dual(
                     audio_duration_s=chunk_dur,
                     keep_unplaceable=True,
                     language=prompt_builder.language,
+                    token_logprobs=logprobs,
                 )
                 # Recover a context-conditioned early EOT for this row (mirrors
                 # the single-mode path).  The recovery re-decode is single-prompt,
@@ -545,11 +577,16 @@ def continuation_transcribe_dual(
                         attention = engine.cross_attention_for_tokens(
                             features1, prompts[j], gen_ids,
                         )
+                        if logprobs is not None:
+                            logprobs = teacher_forced_logprobs(
+                                engine, features1, prompts[j], gen_ids,
+                            )
                         word_ts_local = extract_word_timings(
                             engine, gen_ids, attention, mel,
                             audio_duration_s=chunk_dur,
                             keep_unplaceable=True,
                             language=prompt_builder.language,
+                            token_logprobs=logprobs,
                         )
                 words = [wt.word for wt in word_ts_local]
             else:
@@ -596,8 +633,8 @@ def continuation_transcribe_dual(
                 for wt in safe_word_ts:
                     if wt.start is None or wt.end is None:
                         continue
-                    global_ts[j].append(WordTimestamp(
-                        word=wt.word,
+                    global_ts[j].append(replace(
+                        wt,
                         start=round(float(wt.start) + start_sec, 3),
                         end=round(float(wt.end) + start_sec, 3),
                     ))

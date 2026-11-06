@@ -45,9 +45,11 @@ dependencies = [
 # preloads this pip copy so GPU inference works without a system CUDA
 # install. Linux-only wheels for now (that's also all the fork publishes).
 ct2 = [
-    # >=post3: post2 wheels lack SASS for Ada/Hopper GPUs (PTX-JIT failure
-    # on drivers older than the build toolchain).
-    "ctranslate2-crisperwhisper>=4.7.1.post3,<5",
+    # >=post4: inline token log-probs for word_confidence on greedy/dual
+    # decode (post3 still runs; the library teacher-forces the scores).
+    # post2 wheels lack SASS for Ada/Hopper GPUs (PTX-JIT failure on
+    # drivers older than the build toolchain).
+    "ctranslate2-crisperwhisper>=4.7.1.post4,<5",
     "nvidia-cublas-cu12; sys_platform == 'linux'",
 ]
 # HuggingFace Transformers backend (pure torch; no speculative decoding).

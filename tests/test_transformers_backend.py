@@ -58,7 +58,7 @@ class TestBackendResolution:
 
 class TestFirstStepBan:
     def test_bans_only_on_first_step(self):
-        import numpy as _np
+        torch = pytest.importorskip("torch")
 
         from crisperwhisper.transformers_engine import _FirstStepBan
 
@@ -66,13 +66,16 @@ class TestFirstStepBan:
 
         # At the first generated step (cur len == prefix len) the token is
         # masked; on later steps it is left untouched.
-        scores = _np.zeros((1, 10), dtype=_np.float32)
-        ids_first = _np.zeros((1, 3), dtype=_np.int64)
-        out = ban(ids_first, scores.copy())
+        scores = torch.zeros((1, 10), dtype=torch.float32)
+        ids_first = torch.zeros((1, 3), dtype=torch.long)
+        out = ban(ids_first, scores)
         assert out[0, 5] == float("-inf")
+        # generate(output_logits=True) keeps the input tensor as the raw
+        # logits, so the ban must not write into it.
+        assert scores[0, 5] == 0.0
 
-        ids_later = _np.zeros((1, 4), dtype=_np.int64)
-        out2 = ban(ids_later, scores.copy())
+        ids_later = torch.zeros((1, 4), dtype=torch.long)
+        out2 = ban(ids_later, scores)
         assert out2[0, 5] == 0.0
 
 

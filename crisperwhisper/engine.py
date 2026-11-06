@@ -63,11 +63,39 @@ def _missing_fork_apis_error(missing: list[str]) -> ImportError:
     )
 
 
+def _logits_to_fp32_rows(logits: ctranslate2.StorageView) -> np.ndarray:
+    """A CT2 logits StorageView as a CPU float32 ``[positions, vocab]`` array."""
+    arr = np.array(
+        logits.to(ctranslate2.DataType.float32).to_device(ctranslate2.Device.cpu)
+    )
+    return arr.reshape(-1, arr.shape[-1])
+
+
+def _pick_logprobs(logits: np.ndarray, token_ids: list[int]) -> np.ndarray:
+    """``log_softmax(logits[k])[token_ids[k]]`` for each row ``k``."""
+    logits = logits.astype(np.float64, copy=False)
+    m = logits.max(axis=-1, keepdims=True)
+    lse = m[:, 0] + np.log(np.exp(logits - m).sum(axis=-1))
+    picked = logits[np.arange(len(token_ids)), np.asarray(token_ids)]
+    return (picked - lse).astype(np.float32)
+
+
 def _check_fork_apis(whisper_model) -> None:
     """Fail fast when the installed ctranslate2 lacks the core fork APIs."""
     missing = [m for m in _REQUIRED_FORK_APIS if not hasattr(whisper_model, m)]
     if missing:
         raise _missing_fork_apis_error(missing)
+
+
+def fork_has_inline_logprobs() -> bool:
+    """Whether ``generate_greedy_with_attention`` can return token log-probs.
+
+    Builds that predate ``return_token_logprobs`` lack
+    ``WhisperDecoderState.collected_logprobs``; callers then fall back to a
+    teacher-forced pass (:meth:`CT2Engine.token_logprobs_for_tokens`).
+    """
+    state_cls = getattr(ctranslate2.models, "WhisperDecoderState", None)
+    return state_cls is not None and hasattr(state_cls, "collected_logprobs")
 
 
 def check_fork_feature(whisper_model, api: str) -> None:
@@ -546,20 +574,62 @@ class CT2Engine:
         max_length: int = 256,
         hallucination_mitigation: bool = True,
         suppress_tokens: list[int] | None = None,
-    ) -> tuple[list[int], np.ndarray]:
+        return_logprobs: bool = False,
+    ):
         """Greedy decode with optional repair, also returning the per-token
         cross-attention matrix (``[len(gen_ids), F_enc]``, 1-to-1 with the
         returned tokens).  Requires :meth:`enable_attention` first.
+
+        Returns ``(gen_ids, attention)``, or ``(gen_ids, attention, logprobs)``
+        with ``return_logprobs=True``: ``logprobs`` is a float32 array 1-to-1
+        with ``gen_ids`` (see :meth:`token_logprobs_for_tokens`).  On fork
+        builds without inline log-probs they come from a teacher-forced pass.
         """
         from crisperwhisper.hallucination import generate_with_repair_and_attention
 
-        ids, attn, _ = generate_with_repair_and_attention(
+        inline = return_logprobs and fork_has_inline_logprobs()
+        out = generate_with_repair_and_attention(
             self, features, prompt_tokens,
             max_length=max_length,
             max_repairs=3 if hallucination_mitigation else 0,
             suppress_tokens=suppress_tokens,
+            return_logprobs=inline,
         )
-        return ids, attn
+        ids, attn = out[0], out[1]
+        if not return_logprobs:
+            return ids, attn
+        logprobs = (
+            out[3] if inline
+            else self.token_logprobs_for_tokens(features, prompt_tokens, ids)
+        )
+        return ids, attn, logprobs
+
+    def token_logprobs_for_tokens(
+        self,
+        features: ctranslate2.StorageView,
+        prompt_tokens: list[int],
+        gen_ids: list[int],
+    ) -> np.ndarray:
+        """Teacher-forced log-probability of each token in ``gen_ids``.
+
+        Entry ``k`` is ``log_softmax(raw_logits)[gen_ids[k]]`` at the position
+        that predicts ``gen_ids[k]`` given ``prompt_tokens + gen_ids[:k]``: the
+        full-vocabulary softmax of the raw logits, before suppression -- the
+        same values the inline capture returns.  Used for ids the decode did
+        not produce itself (coverage fallback, early-EOT recovery,
+        speculative decoding).  Moves ``len(gen_ids)`` logit rows to the CPU.
+        """
+        gen_ids = [int(t) for t in gen_ids]
+        if not gen_ids:
+            return np.zeros((0,), dtype=np.float32)
+        encoded = self.model.encode(features)
+        _state, logits0 = self.model.prefill(encoded, list(prompt_tokens))
+        rows = [_logits_to_fp32_rows(logits0)[-1:]]
+        if len(gen_ids) > 1:
+            rows.append(_logits_to_fp32_rows(
+                self.model.forward_batch(_state, gen_ids[:-1]),
+            ))
+        return _pick_logprobs(np.concatenate(rows, axis=0), gen_ids)
 
     # ------------------------------------------------------------------
     # Batched dual-mode generation (verbatim + intended in one pass).
@@ -575,7 +645,8 @@ class CT2Engine:
         word_timestamps: bool = False,
         features_single: ctranslate2.StorageView | None = None,
         suppress_tokens: list[int] | None = None,
-    ) -> tuple[list[list[int]], list[np.ndarray] | None]:
+        return_logprobs: bool = False,
+    ):
         """Batched greedy decode of several prompts on one **shared** audio.
 
         Wraps the native ``generate_dual_greedy`` primitive: the encoder runs
@@ -595,21 +666,35 @@ class CT2Engine:
         (no prompt prefix; trailing EOT included when that row stopped on
         EOT), and ``attns`` is one ``[len(gen_ids), F_enc]`` float32 matrix
         per prompt (or ``None`` when ``word_timestamps`` is False).
+
+        With ``return_logprobs=True`` returns ``(gens, attns, logprobs)``:
+        one float32 array per prompt, 1-to-1 with that row's ids (see
+        :meth:`token_logprobs_for_tokens`).  They are captured inline on fork
+        builds that support it; otherwise each row is scored with a
+        teacher-forced pass.
         """
         if self.eot_id is None:
             raise ValueError("engine has no eot_id")
         check_fork_feature(self.model, "generate_dual_greedy")
         supp = self._resolve_suppress(suppress_tokens)
+        feats1 = features_single if features_single is not None else features
+        prompts = [list(p) for p in prompt_tokens_list]
 
-        gens_raw, attns_sv = self.model.generate_dual_greedy(
-            features if features_single is None else features_single,
-            [list(p) for p in prompt_tokens_list],
+        inline = return_logprobs and fork_has_inline_logprobs()
+        out = self.model.generate_dual_greedy(
+            feats1,
+            prompts,
             max_new_tokens=int(max_length),
             eot_id=int(self.eot_id),
             suppress_tokens=supp,
             want_attention=word_timestamps,
+            **({"return_token_logprobs": True} if inline else {}),
         )
+        gens_raw, attns_sv = out[0], out[1]
         gens: list[list[int]] = [list(g) for g in gens_raw]
+        lps: list[np.ndarray] | None = None
+        if inline:
+            lps = [np.asarray(row, dtype=np.float32) for row in out[2]]
 
         attns: list[np.ndarray] | None = None
         if word_timestamps:
@@ -621,8 +706,19 @@ class CT2Engine:
                 else:
                     attns.append(arr.astype(np.float32, copy=False))
 
+        def _ret():
+            if not return_logprobs:
+                return gens, attns
+            nonlocal lps
+            if lps is None:
+                lps = [
+                    self.token_logprobs_for_tokens(feats1, p, g)
+                    for p, g in zip(prompts, gens)
+                ]
+            return gens, attns, lps
+
         if not hallucination_mitigation:
-            return gens, attns
+            return _ret()
 
         # Per-row repair: only rows that actually loop (rare) are re-decoded
         # singly via the rewind-and-escape path, which needs a batch-1 view.
@@ -633,26 +729,29 @@ class CT2Engine:
             generate_with_repair_and_attention,
         )
 
-        feats1 = features_single if features_single is not None else features
-        for idx, (prompt, gen) in enumerate(zip(prompt_tokens_list, gens)):
+        for idx, (prompt, gen) in enumerate(zip(prompts, gens)):
             if find_token_loop(
                 gen, min_ngram=1, max_ngram=5, reps=DEFAULT_REPAIR_THRESHOLDS,
             ) is None:
                 continue
             if word_timestamps:
-                ids, attn, _ = generate_with_repair_and_attention(
+                res = generate_with_repair_and_attention(
                     self, feats1, prompt, max_length=max_length, max_repairs=3,
-                    suppress_tokens=supp,
+                    suppress_tokens=supp, return_logprobs=inline,
                 )
-                gens[idx] = ids
-                attns[idx] = attn
+                gens[idx] = res[0]
+                attns[idx] = res[1]
+                if inline:
+                    lps[idx] = res[3]
             else:
                 ids, _ = generate_with_repair(
                     self, feats1, prompt, max_length=max_length,
                     suppress_tokens=supp,
                 )
                 gens[idx] = ids
-        return gens, attns
+                if inline:
+                    lps[idx] = self.token_logprobs_for_tokens(feats1, prompt, ids)
+        return _ret()
 
     # ------------------------------------------------------------------
     # Cross-attention extraction (for word-level timings).
@@ -808,6 +907,7 @@ class CT2Engine:
         eot_id: int | None = None,
         suppress_tokens: Sequence[int] | None = None,
         ban_first_tokens: Sequence[int] | None = None,
+        return_token_logprobs: bool = False,
     ) -> tuple[ctranslate2.WhisperDecoderState, list[int]]:
         """Run a whole greedy decode segment inside one C++ thread-pool job.
 
@@ -823,7 +923,9 @@ class CT2Engine:
 
         Returns ``(state, generated_ids)``; the last id will be
         ``eot_id`` iff generation stopped on EOT.  ``state.collected_attention``
-        has length ``len(generated_ids)``.
+        has length ``len(generated_ids)``, and so does
+        ``state.collected_logprobs`` with ``return_token_logprobs=True``
+        (requires a fork build with :func:`fork_has_inline_logprobs`).
         """
         if eot_id is None:
             if self.eot_id is None:
@@ -834,6 +936,9 @@ class CT2Engine:
         suppress = self._resolve_suppress(suppress_tokens)
         ban = [int(t) for t in (ban_first_tokens or ())]
 
+        kwargs = {}
+        if return_token_logprobs:
+            kwargs["return_token_logprobs"] = True
         return self.model.generate_greedy_with_attention(
             features,
             list(prompt_tokens),
@@ -841,6 +946,7 @@ class CT2Engine:
             eot_id=int(eot_id),
             suppress_tokens=suppress,
             ban_first_tokens=ban,
+            **kwargs,
         )
 
     def decode_attention(
