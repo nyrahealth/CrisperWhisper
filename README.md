@@ -1,6 +1,6 @@
 # CrisperWhisper 2.0
 
-[![PyPI](https://img.shields.io/pypi/v/crisperwhisper?cacheSeconds=3600)](https://pypi.org/project/crisperwhisper/)
+[![PyPI](https://img.shields.io/badge/pypi-v2.0.4-blue)](https://pypi.org/project/crisperwhisper/2.0.4/)
 
 **The most accurate verbatim speech recognition you can run in production:
 controllable, multilingual, and timed to the word.**
@@ -103,10 +103,10 @@ conversational speech, are in the
 ```bash
 # NVIDIA GPU (Linux): fastest, includes speculative decoding.
 # An NVIDIA driver is all you need; CUDA libraries arrive via pip.
-pip install "crisperwhisper[ct2]"
+pip install "crisperwhisper[ct2]>=2.0.4"
 
 # Pure PyTorch: runs anywhere torch does (macOS, Windows, CPU)
-pip install "crisperwhisper[transformers]"
+pip install "crisperwhisper[transformers]>=2.0.4"
 ```
 
 ## Quickstart
