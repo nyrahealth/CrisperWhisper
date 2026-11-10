@@ -20,6 +20,11 @@ from typing import Union
 
 import numpy as np
 
+from crisperwhisper.alignment import (
+    ForcedAligner,
+    apply_timing_method,
+    validate_timing_method,
+)
 from crisperwhisper.audio import SAMPLE_RATE, get_duration, load_audio
 from crisperwhisper.result import TranscriptionResult
 
@@ -149,6 +154,11 @@ class CrisperWhisperModel:
         ``"auto"`` defaults.
     cache_dir
         Where to store converted CTranslate2 models (v2 only).
+    forced_aligner
+        :class:`~crisperwhisper.alignment.ForcedAligner` used for
+        ``timing_method="forced_aligner"`` (e.g. ``ForcedAligner(pro=True)``
+        for noisy audio, or one instance shared by several models).  When
+        ``None`` (default) a standard aligner is created on first use.
     """
 
     def __init__(
@@ -165,9 +175,11 @@ class CrisperWhisperModel:
         min_speculative_tokens: int = 0,
         max_speculative_tokens: int = 0,
         cache_dir: str | Path | None = None,
+        forced_aligner: ForcedAligner | None = None,
     ):
         from crisperwhisper.version import detect_model_version
 
+        self._forced_aligner = forced_aligner
         model_name_or_path = resolve_model_id(model_name_or_path)
         if draft_model is not None:
             draft_model = resolve_model_id(draft_model)
@@ -414,6 +426,32 @@ class CrisperWhisperModel:
         """Return 1 for legacy CrisperWhisper, 2 for CrisperWhisper 2."""
         return self._model_version
 
+    @property
+    def forced_aligner(self) -> ForcedAligner:
+        """The :class:`ForcedAligner` behind ``timing_method="forced_aligner"``
+        (created on first access; its model loads on first alignment)."""
+        if self._forced_aligner is None:
+            self._forced_aligner = ForcedAligner()
+        return self._forced_aligner
+
+    def _finish_timing(
+        self,
+        result: TranscriptionResult,
+        audio_array: np.ndarray | None,
+        timing_method: str,
+    ) -> TranscriptionResult:
+        """Apply ``timing_method`` to a finished result; the forced
+        alignment's wall time is added to ``processing_time``."""
+        t0 = time.perf_counter()
+        apply_timing_method(
+            result, audio_array, timing_method, lambda: self.forced_aligner,
+        )
+        if result.timing_method == "forced_aligner":
+            result.processing_time = round(
+                result.processing_time + time.perf_counter() - t0, 3,
+            )
+        return result
+
     @staticmethod
     def _validated_longform_config(
         *,
@@ -499,6 +537,7 @@ class CrisperWhisperModel:
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
         word_confidence: bool = False,
+        timing_method: str = "attention",
     ) -> TranscriptionResult:
         """Transcribe audio.
 
@@ -602,22 +641,37 @@ class CrisperWhisperModel:
             with one teacher-forced pass.  Supported for short audio, the
             ``continuation`` longform strategy, :meth:`transcribe_dual`, and
             :meth:`verbatimize`.
+        timing_method
+            How ``words`` are timed: ``"attention"`` (default; see
+            ``word_timestamps``) or ``"forced_aligner"`` (implies
+            ``word_timestamps=True``), which re-times the same words with
+            the nyra forced aligner (:class:`~crisperwhisper.alignment.ForcedAligner`):
+            tighter boundaries, plus per-word ``timing_confidence``, ``kind``
+            and ``phones``.  English only so far; other languages raise a
+            ``UserWarning`` and keep the attention timings.
+            ``result.timing_method`` records the method actually used.
 
         Returns
         -------
         TranscriptionResult
         """
+        validate_timing_method(timing_method)
         suppress_tokens = _sanitize_suppress_tokens(suppress_tokens)
         self._warn_if_hotwords_unsupported(hotwords)
-        if word_confidence:
+        if word_confidence or timing_method == "forced_aligner":
             word_timestamps = True
+        audio_array = None
+        if timing_method == "forced_aligner":
+            # loaded once, shared by the transcription and the aligner
+            audio = audio_array = load_audio(audio, sr=sr)
+            sr = None
         if self._model_version == 1:
             if word_confidence:
                 warnings.warn(
                     "word_confidence=True is not supported for v1 models and "
                     "is ignored.", UserWarning, stacklevel=2,
                 )
-            return self._transcribe_v1(
+            result = self._transcribe_v1(
                 audio, language=language, mode=mode,
                 hotwords=hotwords, sr=sr,
                 speculative_decoding=speculative_decoding,
@@ -626,6 +680,7 @@ class CrisperWhisperModel:
                 alignment_heads=alignment_heads,
                 suppress_tokens=suppress_tokens,
             )
+            return self._finish_timing(result, audio_array, timing_method)
 
         if speculative_decoding and self._backend == "transformers":
             warnings.warn(
@@ -636,7 +691,7 @@ class CrisperWhisperModel:
             )
             speculative_decoding = False
 
-        return self._transcribe_v2(
+        result = self._transcribe_v2(
             audio, language=language, mode=mode, hotwords=hotwords, sr=sr,
             longform_strategy=longform_strategy,
             chunk_duration=chunk_duration, stride=stride,
@@ -653,6 +708,7 @@ class CrisperWhisperModel:
             suppress_tokens=suppress_tokens,
             word_confidence=word_confidence,
         )
+        return self._finish_timing(result, audio_array, timing_method)
 
     def transcribe_dual(
         self,
@@ -676,6 +732,7 @@ class CrisperWhisperModel:
         alignment_heads: list[tuple[int, int]] | None = None,
         suppress_tokens: list[int] | None = None,
         word_confidence: bool = False,
+        timing_method: str = "attention",
     ) -> tuple[TranscriptionResult, ...]:
         """Transcribe one audio in several modes in a single batched GPU pass.
 
@@ -726,6 +783,9 @@ class CrisperWhisperModel:
             If ``True`` (implies ``word_timestamps=True``), each mode's words
             carry ``probability`` and ``tokens`` (see :meth:`transcribe`).
             Captured inline in the same batched pass.
+        timing_method
+            ``"attention"`` or ``"forced_aligner"``, applied to each mode's
+            words (see :meth:`transcribe`).
 
         longform_strategy
             Longform strategy for audio > 30s.  Only ``"continuation"`` is
@@ -753,8 +813,9 @@ class CrisperWhisperModel:
         unaffected; only a row that actually collapsed pays for a single-prompt
         re-decode of its own recovery.
         """
+        validate_timing_method(timing_method)
         self._warn_if_hotwords_unsupported(hotwords)
-        if word_confidence:
+        if word_confidence or timing_method == "forced_aligner":
             word_timestamps = True
         if self._model_version == 1:
             raise NotImplementedError(
@@ -833,14 +894,17 @@ class CrisperWhisperModel:
         dur = round(duration, 2)
         pt = round(elapsed, 3)
         return tuple(
-            TranscriptionResult(
-                text=text,
-                language=language,
-                mode=mode,
-                duration=dur,
-                processing_time=pt,
-                chunks=chunks,
-                words=(words or None) if word_timestamps else None,
+            self._finish_timing(
+                TranscriptionResult(
+                    text=text,
+                    language=language,
+                    mode=mode,
+                    duration=dur,
+                    processing_time=pt,
+                    chunks=chunks,
+                    words=(words or None) if word_timestamps else None,
+                ),
+                audio_array, timing_method,
             )
             for mode, (text, chunks, words) in zip(modes, per_mode)
         )
@@ -1171,6 +1235,7 @@ class CrisperWhisperModel:
         word_timestamps: bool = False,
         alignment_heads: list[tuple[int, int]] | None = None,
         word_confidence: bool = False,
+        timing_method: str = "attention",
     ) -> TranscriptionResult:
         """Transform an intended transcript into verbatim using audio context.
 
@@ -1203,13 +1268,16 @@ class CrisperWhisperModel:
         word_confidence
             If ``True`` (implies ``word_timestamps=True``), each word also
             carries ``probability`` and ``tokens`` (see :meth:`transcribe`).
+        timing_method
+            ``"attention"`` or ``"forced_aligner"`` (see :meth:`transcribe`).
 
         Returns
         -------
         TranscriptionResult with ``mode="verbatimize"`` (and ``words`` set
         when ``word_timestamps=True``).
         """
-        if word_confidence:
+        validate_timing_method(timing_method)
+        if word_confidence or timing_method == "forced_aligner":
             word_timestamps = True
         if self._model_version == 1:
             raise NotImplementedError(
@@ -1268,7 +1336,7 @@ class CrisperWhisperModel:
 
         elapsed = time.perf_counter() - t0
 
-        return TranscriptionResult(
+        result = TranscriptionResult(
             text=text,
             language=language,
             mode="verbatimize",
@@ -1276,6 +1344,7 @@ class CrisperWhisperModel:
             processing_time=round(elapsed, 3),
             words=(words or None) if word_timestamps else None,
         )
+        return self._finish_timing(result, audio_array, timing_method)
 
     def forced_align(
         self,
@@ -1288,10 +1357,18 @@ class CrisperWhisperModel:
         longform_strategy: str = "continuation",
         hallucination_mitigation: bool = True,
         alignment_heads: list[tuple[int, int]] | None = None,
+        timing_method: str = "attention",
     ) -> TranscriptionResult:
         """Align a known transcript to the audio (forced alignment).
 
-        Produces word-level timestamps for the *provided* ``text`` using a
+        With ``timing_method="forced_aligner"`` the ``text`` is aligned
+        directly by the nyra forced aligner
+        (:meth:`ForcedAligner.align <crisperwhisper.alignment.ForcedAligner.align>`;
+        no transcription pass, English only so far -- other languages raise
+        a ``UserWarning`` and use the attention method below).
+
+        With ``timing_method="attention"`` (default) it produces word-level
+        timestamps for the *provided* ``text`` using a
         **transcribe-then-align** strategy: the audio is transcribed with the
         normal (longform) pipeline to get the model's hypothesis words *with*
         cross-attention timestamps, then the reference ``text`` is aligned to
@@ -1325,6 +1402,8 @@ class CrisperWhisperModel:
         alignment_heads
             Optional explicit ``(layer, head)`` pairs for word timing; defaults
             to the model's stored alignment heads.
+        timing_method
+            ``"attention"`` (transcribe-then-align) or ``"forced_aligner"``.
 
         Returns
         -------
@@ -1333,8 +1412,21 @@ class CrisperWhisperModel:
         """
         from crisperwhisper.forced_align import align_to_hypothesis
 
+        validate_timing_method(timing_method)
         if not text or not text.strip():
             raise ValueError("forced_align() requires non-empty text.")
+
+        if timing_method == "forced_aligner":
+            if self.forced_aligner.supports(language):
+                return self.forced_aligner.align(
+                    audio, text, language=language, sr=sr,
+                )
+            warnings.warn(
+                f"timing_method='forced_aligner' supports only "
+                f"{list(self.forced_aligner.supported_languages())} so far; "
+                f"using attention word timings for language {language!r}.",
+                UserWarning, stacklevel=2,
+            )
 
         t0 = time.perf_counter()
 
@@ -1360,6 +1452,7 @@ class CrisperWhisperModel:
             processing_time=round(elapsed, 3),
             chunks=None,
             words=words or None,
+            timing_method="attention" if words else None,
         )
 
     @staticmethod

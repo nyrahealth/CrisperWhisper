@@ -1,6 +1,6 @@
 # CrisperWhisper 2.0
 
-[![PyPI](https://img.shields.io/badge/pypi-v2.0.4-blue)](https://pypi.org/project/crisperwhisper/2.0.4/)
+[![PyPI](https://img.shields.io/badge/pypi-v2.1.0-blue)](https://pypi.org/project/crisperwhisper/2.1.0/)
 
 **The most accurate verbatim speech recognition you can run in production:
 controllable, multilingual, and timed to the word.**
@@ -103,11 +103,15 @@ conversational speech, are in the
 ```bash
 # NVIDIA GPU (Linux): fastest, includes speculative decoding.
 # An NVIDIA driver is all you need; CUDA libraries arrive via pip.
-pip install "crisperwhisper[ct2]>=2.0.4"
+pip install "crisperwhisper[ct2]>=2.1.0"
 
 # Pure PyTorch: runs anywhere torch does (macOS, Windows, CPU)
-pip install "crisperwhisper[transformers]>=2.0.4"
+pip install "crisperwhisper>=2.1.0"
 ```
+
+Every install includes the
+[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner)
+for `timing_method="forced_aligner"`.
 
 ## Quickstart
 
@@ -130,6 +134,7 @@ result = model.transcribe("meeting.wav", language="en", word_confidence=True)
 for w in result.words:
     print(f"{w.start:6.2f}-{w.end:6.2f}  {w.word}  p={w.probability:.2f}")
 
+
 # Verbatimize: upgrade an existing clean transcript with the
 # disfluencies that are actually in the audio
 result = model.verbatimize("clip.wav", "I think we should ship it Friday.")
@@ -138,18 +143,8 @@ result = model.verbatimize("clip.wav", "I think we should ship it Friday.")
 Audio longer than 30 seconds is handled automatically (see
 [longform](#what-else-is-in-the-box) below). The first load of a model
 downloads it from HuggingFace and, on the `ct2` backend, converts it once
-into a local cache. That **one-time conversion** needs torch and
-transformers, which the lean `[ct2]` extra does not install -- add them
-once with:
-
-```bash
-pip install "crisperwhisper[ct2,convert]"   # or add [convert] later
-```
-
-A CPU-only torch is enough for the conversion, and the dependencies can
-be uninstalled once the converted model is cached. Loading a directory
-that already contains a converted CT2 model (`model.bin`) never needs
-them.
+into a local cache. That **one-time conversion** uses torch and
+transformers, which every install includes.
 
 ### Models
 
@@ -166,6 +161,45 @@ The standard models are released under a
 and are available for commercial licensing. The **Pro** models are available
 under commercial license only. For both,
 [get in touch](https://www.nyra-labs.com/crisperwhisper).
+
+### Most precise word timings (English): the forced aligner
+
+For English, the most precise word timings come from the built-in
+[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner).
+CrisperWhisper transcribes as usual, then the aligner re-times the same
+words against the audio. `result.words` keeps its format and gains
+`timing_confidence`, `kind` (word / filler / sound / cutoff) and
+phone-level `phones`:
+
+```python
+from crisperwhisper import CrisperWhisperModel, ForcedAligner
+
+model = CrisperWhisperModel("large")
+result = model.transcribe(
+    "meeting.wav",
+    language="en",
+    timing_method="forced_aligner",   # implies word_timestamps=True
+    word_confidence=True,             # optional: ASR word probabilities too
+)
+for w in result.words:
+    print(f"{w.start:7.3f}-{w.end:7.3f}  {w.word:14} {w.kind:7} "
+          f"timing_conf={w.timing_confidence:.2f}")
+
+# Noisy audio: the noise-robust aligner model
+model = CrisperWhisperModel("large", forced_aligner=ForcedAligner(pro=True))
+
+# Long recordings with many pauses: about 2x faster alignment, slightly
+# less precise (aligns each stretch between >5 s pauses separately)
+model = CrisperWhisperModel("large", forced_aligner=ForcedAligner(segment_gap=5.0))
+
+# A transcript you already have, no ASR model needed
+result = ForcedAligner().align("clip.wav", "so I [UM] went there")
+```
+
+The forced aligner supports English today, and we will add other
+languages soon. Until then, `timing_method="forced_aligner"` with another
+language raises a warning and keeps the attention timings, which work for
+every language.
 
 ### Faster inference: speculative decoding (ct2)
 
@@ -188,10 +222,11 @@ Everything below works out of the box and is covered in depth in
 | `mode="verbatim" / "intended"` | Choose what-was-said vs. what-was-meant per call |
 | `word_timestamps=True` | Per-word start/end times from supervised cross-attention alignment |
 | `word_confidence=True` | Per-word (and per-token) probabilities on both backends; implies timestamps |
+| `timing_method="forced_aligner"` | Most precise word timings: re-time the same words with the nyra forced aligner, plus timing confidence, filler/sound/cut-off kind and phones (English; more languages soon) |
 | `hotwords=[...]` | Bias recognition toward names and rare terms (**Pro models only**) |
 | `model.transcribe_dual(...)` | Verbatim **and** intended in one pass (ct2) |
 | `model.verbatimize(audio, transcript)` | Insert real disfluencies into a trusted clean transcript |
-| `model.forced_align(audio, text)` | Timings for a transcript you already have |
+| `model.forced_align(audio, text)` / `ForcedAligner().align(audio, text)` | Timings for a transcript you already have (`ForcedAligner` needs no ASR model) |
 | Longform | Audio >30s transcribed seamlessly via conditional continuation, with no chunk-boundary duplicates, drops, or stitching |
 | Hallucination mitigation | On by default: detects and suppresses Whisper's looping-repetition failure mode during decoding |
 | `compute_type="float16" / "int8_float16"` | Quantization |
@@ -218,7 +253,7 @@ Each mechanism has a deep-dive post:
 ## Documentation
 
 [DOCS.md](DOCS.md) covers the full API: backends and their trade-offs,
-every `transcribe()` option (including word timestamps and confidence),
+every `transcribe()` option (including word timestamps, timing methods and confidence),
 dual-mode transcription, forced alignment,
 longform strategies, speculative-K tuning, hallucination-repair thresholds,
 quantization, model conversion, and the result object.
