@@ -14,9 +14,11 @@ from crisperwhisper.model import (  # noqa: E402
 from crisperwhisper.result import (  # noqa: E402
     TranscriptionResult,
     ChunkResult,
+    PhoneTimestamp,
     TokenProbability,
     WordTimestamp,
 )
+from crisperwhisper.alignment import TIMING_METHODS, ForcedAligner  # noqa: E402
 
 __all__ = [
     "CrisperWhisperModel",
@@ -24,10 +26,13 @@ __all__ = [
     "ChunkResult",
     "TokenProbability",
     "WordTimestamp",
+    "PhoneTimestamp",
+    "ForcedAligner",
+    "TIMING_METHODS",
     "DEFAULT_MODEL",
     "OFFICIAL_MODELS",
 ]
-__version__ = "2.0.4"
+__version__ = "2.1.0"
 
 
 def check_speculative_support() -> None:

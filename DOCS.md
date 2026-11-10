@@ -81,8 +81,14 @@ via extras:
 ```bash
 pip install crisperwhisper[ct2]            # CTranslate2 (fast, speculative decoding)
 pip install crisperwhisper[transformers]   # pure torch + HuggingFace Transformers
-pip install crisperwhisper[all]            # both backends
+pip install crisperwhisper[align]          # + nyra forced aligner (timing_method="forced_aligner")
+pip install crisperwhisper[all]            # both backends + forced aligner
 ```
+
+`[align]` pulls in `nyra-forced-aligner` (torch-based; English for now) for
+the most precise word timings; see
+[Timing method](#timing-method-attention-vs-forced-aligner). Combine it with
+either backend, e.g. `crisperwhisper[ct2,align]`.
 
 `[ct2]` pulls in `ctranslate2-crisperwhisper`, a drop-in replacement for
 CTranslate2 with speculative-decoding APIs.  `[transformers]` pulls in
@@ -483,6 +489,90 @@ Notes:
 * Speculative decoding: accepted draft tokens have no main-model logits,
   so the whole sequence is teacher-forced on the verifier.
 
+### Timing method: attention vs. forced aligner
+
+Word timings come from one of two methods, chosen per call with
+`timing_method` on `transcribe()`, `transcribe_dual()`, `verbatimize()` and
+`forced_align()`:
+
+| `timing_method` | How | Languages |
+|---|---|---|
+| `"attention"` (default) | Supervised cross-attention + Viterbi over the model's own decode; no extra model, no measurable overhead on ct2 | all |
+| `"forced_aligner"` | The transcript is force-aligned to the audio by the [nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner) (WavLM + HMM); tighter boundaries, plus timing confidence, word kind and phones | English (more languages coming soon) |
+
+```python
+result = model.transcribe("audio.wav", timing_method="forced_aligner")
+result.timing_method      # "forced_aligner"
+for w in result.words:
+    print(f"{w.start:6.2f}-{w.end:6.2f} {w.word:12} {w.kind:7} "
+          f"timing_conf={w.timing_confidence:.2f}")
+```
+
+The output format does not change: `result.words` is the same list of
+`WordTimestamp` with the same words as the attention method (one entry per
+transcribed word, `probability`/`tokens` kept with `word_confidence=True`).
+The forced aligner replaces `start`/`end` and fills three extra fields:
+
+* `timing_confidence: float` (0..1): how well the audio under the word fits
+  it. Low values point at transcript errors and words displaced by them.
+  This is separate from `probability`, which is the ASR model's confidence
+  in the word itself.
+* `kind: str`: `"word"`, `"filler"` (`[UM]`, `[UH]`), `"sound"`
+  (`[laughter]`, ...) or `"cutoff"` (`"th-"`)
+* `phones: list[PhoneTimestamp]`: phone-level `(phone, start, end)`
+
+`"forced_aligner"` implies `word_timestamps=True`.
+
+Fallbacks: the attention timings are always computed first, so nothing is
+lost:
+
+* **Unsupported language:** a `UserWarning`, and the words keep their
+  attention timings (`result.timing_method == "attention"`).
+* **Words the aligner cannot pronounce** (for example a bare symbol): these
+  keep their attention timing, clamped between their re-timed neighbours,
+  with `timing_confidence=None`.
+* **The alignment fails as a whole:** a `UserWarning`, and all words keep
+  their attention timings.
+
+It needs the `[align]` extra (`pip install "crisperwhisper[align]"`);
+without it, `timing_method="forced_aligner"` raises an `ImportError` that
+names the install command. The aligner models load from the Hugging Face Hub on first use
+(`nyralabs/nyra_forced_aligner_en`, noise-robust
+`nyralabs/nyra_forced_aligner_en_pro`) and are cached on the model. To
+configure the aligner, or share one between models, pass your own:
+
+```python
+from crisperwhisper import CrisperWhisperModel, ForcedAligner
+
+aligner = ForcedAligner(pro=True)              # noisy audio
+# ForcedAligner(model="org/repo" or "/local/dir", device="cuda", precision="fp16")
+model = CrisperWhisperModel("large", forced_aligner=aligner)
+```
+
+`ForcedAligner` also works on its own, with no ASR model loaded, to align a
+transcript you already have (any length):
+
+```python
+result = ForcedAligner().align("audio.wav", "so I [UM] went there", language="en")
+```
+
+**How it works.** The forced aligner must explain every frame of audio with
+the transcript's words or silence. Words next to audio the transcript
+leaves out (an untranscribed second speaker, noise) can be pulled onto that
+audio. When the transcript may be incomplete, check `timing_confidence`,
+and words with an unusually long span.
+
+**Faster on long audio (optional).** By default the whole file is aligned
+in one pass, which gives the most precise timings.
+`ForcedAligner(segment_gap=5.0)` instead splits the transcript wherever
+attention sees a pause longer than 5 s, and aligns each segment only
+against its own stretch of audio (`segment_pad`, default 0.5 s, either
+side, never past the middle of the pause). A segment that fails to align
+keeps its attention timings, with a warning. On long recordings with many
+pauses (interviews, meetings) this roughly halves the alignment time, at
+slightly lower precision. The standalone `ForcedAligner.align` always
+aligns in one pass.
+
 ### Verbatimize
 
 > Deep dive: [Closing the verbatim data gap with Verbatimize](https://www.nyra-labs.com/research/verbatimize)
@@ -508,7 +598,16 @@ audio length.
 result = model.forced_align("audio.wav", "the exact words that were spoken")
 for w in result.words:
     print(w.word, w.start, w.end)
+
+# English: align directly with the nyra forced aligner (no transcription pass)
+result = model.forced_align("audio.wav", text, timing_method="forced_aligner")
 ```
+
+With `timing_method="forced_aligner"` the text goes straight to
+[`ForcedAligner.align`](#timing-method-attention-vs-forced-aligner). Tokens
+the aligner cannot pronounce (bare punctuation, symbols) are left out of
+`words`. Other languages raise a `UserWarning` and use the attention method
+below.
 
 Provide naturally-cased, punctuated text (the model was trained on regular
 transcriptions); for v2, verbatim-style text aligns most closely.
@@ -870,7 +969,7 @@ result = model.transcribe("audio.wav")
 
 result.text               # full transcript
 result.language           # language code
-result.mode               # "verbatim", "intended", or "verbatimize"
+result.mode               # "verbatim", "intended", "verbatimize" or "forced_align"
 result.duration           # audio duration in seconds
 result.processing_time    # inference time in seconds
 result.chunks             # per-chunk details (longform only)
@@ -879,6 +978,7 @@ result.words              # list[WordTimestamp] when transcribed with
                           # otherwise None.  v1 models populate this
                           # automatically; v2 models populate it only
                           # when a flag is set.
+result.timing_method      # "attention" | "forced_aligner" (None without words)
 ```
 
 Each entry of `result.words` is a `WordTimestamp(word, start, end)`,
@@ -889,6 +989,11 @@ each word also has:
 * `probability: float` — mean of the word's token probabilities
 * `tokens: list[TokenProbability]` — one `(token, token_id, probability)`
   per (non-special) token of the word
+
+With `timing_method="forced_aligner"` each word the aligner placed also has
+`timing_confidence`, `kind` and `phones` (see
+[Timing method](#timing-method-attention-vs-forced-aligner)). All of these
+fields are `None` when they don't apply.
 
 ## Model Conversion
 
@@ -952,6 +1057,7 @@ CrisperWhisperModel(
     min_speculative_tokens: int = 0,    # ct2 only: explicit adaptive-K window (power users)
     max_speculative_tokens: int = 0,    # ct2 only: explicit adaptive-K window (power users)
     cache_dir: str | Path | None = None,  # ct2 conversion cache
+    forced_aligner: ForcedAligner | None = None,  # for timing_method="forced_aligner"; default created on first use
 )
 ```
 
@@ -985,6 +1091,7 @@ model.transcribe(
     word_confidence: bool = False,      # implies timestamps; per-word/token probs
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,  # None = generation_config default
+    timing_method: str = "attention",   # "attention" | "forced_aligner" (English)
 ) -> TranscriptionResult
 ```
 
@@ -1016,6 +1123,7 @@ model.transcribe_dual(
     word_confidence: bool = False,           # implies timestamps; inline log-probs
     alignment_heads: list[tuple[int, int]] | None = None,
     suppress_tokens: list[int] | None = None,  # shared across modes
+    timing_method: str = "attention",        # applied per mode
 ) -> tuple[TranscriptionResult, ...]
 ```
 
@@ -1033,6 +1141,7 @@ model.verbatimize(
     suppress_tokens: list[int] | None = None,
     word_timestamps: bool = False,
     word_confidence: bool = False,      # implies timestamps
+    timing_method: str = "attention",   # "attention" | "forced_aligner"
 ) -> TranscriptionResult
 ```
 
@@ -1049,11 +1158,29 @@ model.forced_align(
     longform_strategy: str = "continuation",
     hallucination_mitigation: bool = True,
     alignment_heads: list[tuple[int, int]] | None = None,
+    timing_method: str = "attention",  # "forced_aligner": nyra aligner, no ASR pass
 ) -> TranscriptionResult  # mode="forced_align", result.words populated
 ```
 
-Transcribes the audio, then aligns the reference `text` to the hypothesis and
-interpolates unmatched words. Works on all backends.
+With `"attention"`, transcribes the audio, then aligns the reference `text`
+to the hypothesis and interpolates unmatched words; works on all backends.
+With `"forced_aligner"`, aligns `text` directly (English).
+
+### `ForcedAligner`
+
+```python
+ForcedAligner(
+    *,
+    pro: bool = False,                  # noise-robust model
+    model: str | Path | None = None,    # HF repo id or local dir; overrides the per-language default
+    device: str | None = None,          # None = CUDA when available
+    precision: str | None = None,       # "fp16" | "bf16" | "fp32"; None = fp16 on CUDA
+    segment_gap: float | None = None,   # None = one pass; a number splits at attention pauses longer than this
+    segment_pad: float = 0.5,           # audio around each segment's words, seconds
+)
+aligner.align(audio, text, *, language="en", sr=None) -> TranscriptionResult
+aligner.supported_languages() -> tuple[str, ...]
+```
 
 ## License
 

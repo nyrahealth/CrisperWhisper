@@ -61,8 +61,12 @@ ct2 = [
 transformers = ["transformers>=4.40", "torch>=2.4", "accelerate>=0.26"]
 # HF -> CT2 weight conversion (only needed to build CT2 models).
 convert = ["transformers>=4.40", "torch>=2.4"]
-# Convenience: install both backends.
-all = ["crisperwhisper[ct2,transformers]"]
+# nyra forced aligner for timing_method="forced_aligner" / ForcedAligner
+# (WavLM on torch; English for now).  >=0.2.5: Word.confidence + the
+# leading-silence fix.  torch>=2.4 for the same reason as [transformers].
+align = ["nyra-forced-aligner>=0.2.5", "torch>=2.4"]
+# Convenience: install both backends and the forced aligner.
+all = ["crisperwhisper[ct2,transformers,align]"]
 dev = ["crisperwhisper[all]", "pytest>=7.0"]
 
 [project.urls]
