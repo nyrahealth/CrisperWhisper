@@ -106,12 +106,11 @@ conversational speech, are in the
 pip install "crisperwhisper[ct2]>=2.1.0"
 
 # Pure PyTorch: runs anywhere torch does (macOS, Windows, CPU)
-pip install "crisperwhisper>=2.1.0"
-```
+pip install "crisperwhisper[transformers]>=2.1.0"
 
-Every install includes the
-[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner)
-for `timing_method="forced_aligner"`.
+# Add [align] for the most precise English word timings (forced aligner)
+pip install "crisperwhisper[ct2,align]>=2.1.0"
+```
 
 ## Quickstart
 
@@ -134,7 +133,6 @@ result = model.transcribe("meeting.wav", language="en", word_confidence=True)
 for w in result.words:
     print(f"{w.start:6.2f}-{w.end:6.2f}  {w.word}  p={w.probability:.2f}")
 
-
 # Verbatimize: upgrade an existing clean transcript with the
 # disfluencies that are actually in the audio
 result = model.verbatimize("clip.wav", "I think we should ship it Friday.")
@@ -143,8 +141,18 @@ result = model.verbatimize("clip.wav", "I think we should ship it Friday.")
 Audio longer than 30 seconds is handled automatically (see
 [longform](#what-else-is-in-the-box) below). The first load of a model
 downloads it from HuggingFace and, on the `ct2` backend, converts it once
-into a local cache. That **one-time conversion** uses torch and
-transformers, which every install includes.
+into a local cache. That **one-time conversion** needs torch and
+transformers, which the lean `[ct2]` extra does not install -- add them
+once with:
+
+```bash
+pip install "crisperwhisper[ct2,convert]"   # or add [convert] later
+```
+
+A CPU-only torch is enough for the conversion, and the dependencies can
+be uninstalled once the converted model is cached. Loading a directory
+that already contains a converted CT2 model (`model.bin`) never needs
+them.
 
 ### Models
 
@@ -164,8 +172,9 @@ under commercial license only. For both,
 
 ### Most precise word timings (English): the forced aligner
 
-For English, the most precise word timings come from the built-in
-[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner).
+For English, the most precise word timings come from the
+[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner),
+installed with the `[align]` extra (`pip install "crisperwhisper[ct2,align]"`).
 CrisperWhisper transcribes as usual, then the aligner re-times the same
 words against the audio. `result.words` keeps its format and gains
 `timing_confidence`, `kind` (word / filler / sound / cutoff) and

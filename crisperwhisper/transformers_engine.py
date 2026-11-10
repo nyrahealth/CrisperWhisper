@@ -21,7 +21,8 @@ Differences from the CTranslate2 backend:
   *forced-aligner* primitive (known token sequence in, attention out).
 * Slower than CTranslate2 (no fused kernels / int8).
 
-Needs ``transformers`` + ``torch``, both part of the core install.
+Requires the ``crisperwhisper[transformers]`` extra (``transformers`` +
+``torch``).
 """
 
 from __future__ import annotations

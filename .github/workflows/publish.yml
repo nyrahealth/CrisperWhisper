@@ -52,9 +52,8 @@ jobs:
           name: dist
           path: dist/
 
-      # Core install only (no extras): the package must import, extract
-      # features and find the forced aligner with just the base
-      # dependencies.
+      # Core install only (no backend extras): the package must import and
+      # extract features with just the base dependencies.
       - name: Install wheel and verify import
         run: |
           pip install dist/*.whl
@@ -70,8 +69,6 @@ jobs:
           assert mel.shape == (128, 3000), mel.shape
           audio = load_audio(np.zeros(48000, dtype=np.float32), sr=48000)
           assert len(audio) == 16000, len(audio)
-          from crisperwhisper import ForcedAligner
-          assert "en" in ForcedAligner.supported_languages()
           print("crisperwhisper", crisperwhisper.__version__, "ok")
           EOF
 

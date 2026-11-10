@@ -75,20 +75,24 @@ RTF = processing time / audio duration. Lower is better.
 
 ## Installation
 
-The core package includes the pure-torch **transformers** backend and the
-[nyra forced aligner](https://github.com/nyrahealth/nyra-forced-aligner)
-(`timing_method="forced_aligner"`, `ForcedAligner`). Add the fast
-CTranslate2 backend with the `[ct2]` extra:
+The core package installs **no inference backend**. Choose one (or both)
+via extras:
 
 ```bash
-pip install crisperwhisper                 # pure torch + HuggingFace Transformers + forced aligner
-pip install crisperwhisper[ct2]            # + CTranslate2 (fast, speculative decoding)
+pip install crisperwhisper[ct2]            # CTranslate2 (fast, speculative decoding)
+pip install crisperwhisper[transformers]   # pure torch + HuggingFace Transformers
+pip install crisperwhisper[align]          # + nyra forced aligner (timing_method="forced_aligner")
+pip install crisperwhisper[all]            # both backends + forced aligner
 ```
 
+`[align]` pulls in `nyra-forced-aligner` (torch-based; English for now) for
+the most precise word timings; see
+[Timing method](#timing-method-attention-vs-forced-aligner). Combine it with
+either backend, e.g. `crisperwhisper[ct2,align]`.
+
 `[ct2]` pulls in `ctranslate2-crisperwhisper`, a drop-in replacement for
-CTranslate2 with speculative-decoding APIs.  The `[transformers]` and
-`[all]` extras still exist for older install lines; they add nothing the
-core install lacks except `[all]`'s `[ct2]`.
+CTranslate2 with speculative-decoding APIs.  `[transformers]` pulls in
+`torch` + `transformers`.
 
 `[ct2]` GPU support needs only an NVIDIA driver: the CUDA userspace
 libraries (cuBLAS 12) arrive via pip and are loaded automatically; no
@@ -97,14 +101,21 @@ x86_64; on other platforms use `[transformers]`. Do **not** install
 `faster-whisper` (or upstream `ctranslate2`) alongside `[ct2]`: upstream
 ctranslate2 overwrites the fork's files in site-packages.
 
-The core install requires `torch>=2.4` (current `transformers` releases
-refuse older torch at runtime). On platforms without torch 2.4 wheels
-(notably Intel Macs, where torch stopped at 2.2) install with
-`--no-deps` and a hand-picked older pair; the transformers backend itself
-works with any `transformers>=4.40` and its matching torch.
+The `[transformers]` extra requires `torch>=2.4` (current `transformers`
+releases refuse older torch at runtime). On platforms without torch 2.4
+wheels (notably Intel Macs, where torch stopped at 2.2), install the core
+package with a hand-picked older pair instead; the backend itself works
+with any `transformers>=4.40` and its matching torch:
 
-First-time model conversion from HuggingFace format to CT2 uses torch +
-transformers, which the core install already provides.
+```bash
+pip install crisperwhisper "transformers==4.49.*" "torch==2.2.*"
+```
+
+For first-time model conversion from HuggingFace format to CT2:
+
+```bash
+pip install crisperwhisper[convert]
+```
 
 ### Docker
 
@@ -523,7 +534,9 @@ lost:
 * **The alignment fails as a whole:** a `UserWarning`, and all words keep
   their attention timings.
 
-The aligner models load from the Hugging Face Hub on first use
+It needs the `[align]` extra (`pip install "crisperwhisper[align]"`);
+without it, `timing_method="forced_aligner"` raises an `ImportError` that
+names the install command. The aligner models load from the Hugging Face Hub on first use
 (`nyralabs/nyra_forced_aligner_en`, noise-robust
 `nyralabs/nyra_forced_aligner_en_pro`) and are cached on the model. To
 configure the aligner, or share one between models, pass your own:

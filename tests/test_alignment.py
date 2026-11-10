@@ -4,11 +4,14 @@ The pure-Python tests drive :class:`ForcedAligner` with a stub nyra
 ``Aligner`` (no model, no GPU) and check the word mapping, the attention
 fallbacks and that the result format is unchanged.  The ``gpu``-marked test
 runs the real aligner model (downloaded from the Hugging Face Hub) on a
-CrisperWhisper transcription.
+CrisperWhisper transcription.  Everything except the missing-extra test
+needs the ``[align]`` extra and is skipped without it.
 """
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 import warnings
 from types import SimpleNamespace
 
@@ -24,7 +27,18 @@ from crisperwhisper.result import (
     WordTimestamp,
 )
 
+needs_align = pytest.mark.skipif(
+    importlib.util.find_spec("nyra_align") is None,
+    reason="needs the crisperwhisper[align] extra (nyra-forced-aligner)",
+)
+
 AUDIO = np.zeros(16_000 * 5, dtype=np.float32)
+
+
+def test_missing_extra_names_the_install_command(monkeypatch):
+    monkeypatch.setitem(sys.modules, "nyra_align", None)  # import fails
+    with pytest.raises(ImportError, match=r"crisperwhisper\[align\]"):
+        ForcedAligner().supports("en")
 
 
 def _wt(word, start, end, **kw):
@@ -79,6 +93,7 @@ def _result(words, language="en"):
 # Word mapping.
 # ---------------------------------------------------------------------------
 
+@needs_align
 def test_refine_replaces_timing_and_adds_fields():
     stub = _StubNyraAligner()
     words = [_wt(" so", 0.0, 0.2), _wt(" [UM]", 0.3, 0.5), _wt(" yes", 0.6, 0.9)]
@@ -92,6 +107,7 @@ def test_refine_replaces_timing_and_adds_fields():
     assert out[0].phones == [PhoneTimestamp("AH", 10.0, 10.5)]
 
 
+@needs_align
 def test_refine_keeps_asr_confidence_fields():
     toks = [TokenProbability(" hi", 7, 0.8)]
     words = [_wt(" hi", 0.0, 0.2, probability=0.8, tokens=toks)]
@@ -100,6 +116,7 @@ def test_refine_keeps_asr_confidence_fields():
     assert out[0].start == 10.0
 
 
+@needs_align
 def test_unpronounceable_word_keeps_attention_timing():
     stub = _StubNyraAligner(unpronounceable={"&"})
     words = [_wt("a", 0.0, 0.2), _wt("&", 10.6, 10.8), _wt("b", 0.6, 0.9)]
@@ -110,6 +127,7 @@ def test_unpronounceable_word_keeps_attention_timing():
     assert out[1].phones is None
 
 
+@needs_align
 def test_unaligned_word_is_clamped_between_aligned_neighbours():
     stub = _StubNyraAligner(unpronounceable={"&"})
     # attention put "&" before the previous word's forced-aligned end
@@ -122,6 +140,7 @@ def test_unaligned_word_is_clamped_between_aligned_neighbours():
     assert (out[0].start, out[0].end, out[2].start) == (10.0, 10.5, 12.0)
 
 
+@needs_align
 def test_repeated_words_with_drops_map_in_order():
     stub = _StubNyraAligner(unpronounceable={"--"})
     words = [_wt("no", 0, 0.1), _wt("--", 0.1, 0.2), _wt("no", 0.2, 0.3),
@@ -132,6 +151,7 @@ def test_repeated_words_with_drops_map_in_order():
     assert [w.timing_confidence for w in out] == [0.9, None, 0.9, 0.9]
 
 
+@needs_align
 def test_word_with_inner_whitespace_spans_its_pieces():
     words = [_wt(" New York", 0.0, 0.5), _wt(" city", 0.6, 0.9)]
     out = _aligner(_StubNyraAligner()).refine(words, AUDIO, language="en")
@@ -170,6 +190,7 @@ def test_default_is_one_pass_over_the_file():
     assert fa._segments(words, 60.0) == [(0, 2, 0.5, 31.5)]
 
 
+@needs_align
 def test_segmented_refine_crops_audio_and_shifts_times():
     stub = _StubNyraAligner()
     # leading 30 s of untranscribed audio before "ok"
@@ -185,6 +206,7 @@ def test_segmented_refine_crops_audio_and_shifts_times():
     assert out[0].phones == [PhoneTimestamp("AH", 41.5, 42.0)]
 
 
+@needs_align
 def test_failed_segment_keeps_attention_timing():
     stub = _StubNyraAligner(fail={"yes"})
     words = [_wt("ok", 1.0, 1.3), _wt("yes", 20.0, 20.4)]
@@ -194,6 +216,7 @@ def test_failed_segment_keeps_attention_timing():
     assert (out[1].start, out[1].end, out[1].timing_confidence) == (20.0, 20.4, None)
 
 
+@needs_align
 def test_all_segments_failing_raises():
     stub = _StubNyraAligner(fail=True)
     words = [_wt("ok", 1.0, 1.3), _wt("yes", 20.0, 20.4)]
@@ -215,6 +238,7 @@ def test_attention_method_leaves_words_untouched():
     assert (w.timing_confidence, w.kind, w.phones) == (None, None, None)
 
 
+@needs_align
 def test_no_words_means_no_timing_method():
     res = _result([])
     res.words = None
@@ -223,6 +247,7 @@ def test_no_words_means_no_timing_method():
     assert res.timing_method is None
 
 
+@needs_align
 def test_unsupported_language_warns_even_without_words():
     res = _result([], language="de")
     res.words = None
@@ -231,6 +256,7 @@ def test_unsupported_language_warns_even_without_words():
                             lambda: _aligner(_StubNyraAligner()))
 
 
+@needs_align
 def test_forced_aligner_method_sets_timing_method():
     res = apply_timing_method(_result([_wt("hi", 0.0, 0.2)]), AUDIO,
                               "forced_aligner",
@@ -239,6 +265,7 @@ def test_forced_aligner_method_sets_timing_method():
     assert res.words[0].start == 10.0
 
 
+@needs_align
 def test_unsupported_language_warns_and_keeps_attention():
     words = [_wt("hallo", 0.0, 0.2)]
     stub = _StubNyraAligner()
@@ -249,6 +276,7 @@ def test_unsupported_language_warns_and_keeps_attention():
     assert stub.texts == []
 
 
+@needs_align
 def test_alignment_failure_warns_and_keeps_attention():
     words = [_wt("hi", 0.0, 0.2)]
     with pytest.warns(UserWarning, match="Forced alignment failed"):
@@ -257,6 +285,7 @@ def test_alignment_failure_warns_and_keeps_attention():
     assert res.words == words and res.timing_method == "attention"
 
 
+@needs_align
 def test_language_codes_are_normalized():
     fa = ForcedAligner()
     assert fa.supports("en") and fa.supports("EN-us") and fa.supports("en_GB")
@@ -267,6 +296,7 @@ def test_language_codes_are_normalized():
 # Standalone ForcedAligner.align.
 # ---------------------------------------------------------------------------
 
+@needs_align
 def test_standalone_align():
     stub = _StubNyraAligner(unpronounceable={"..."})
     res = _aligner(stub).align(AUDIO, "so [um] ... yes")
@@ -276,6 +306,7 @@ def test_standalone_align():
     assert res.duration == 5.0
 
 
+@needs_align
 def test_standalone_align_rejects_unsupported_language():
     with pytest.raises(ValueError, match="does not support"):
         ForcedAligner().align(AUDIO, "hallo", language="de")
@@ -306,6 +337,7 @@ def _model(stub):
     return m
 
 
+@needs_align
 def test_transcribe_forced_aligner():
     stub = _StubNyraAligner()
     m = _model(stub)
@@ -333,6 +365,7 @@ def test_transcribe_rejects_unknown_timing_method():
         _model(_StubNyraAligner()).transcribe(AUDIO, timing_method="viterbi")
 
 
+@needs_align
 def test_transcribe_forced_aligner_non_english_warns():
     m = _model(_StubNyraAligner())
     with pytest.warns(UserWarning, match="supports only"):
@@ -341,6 +374,7 @@ def test_transcribe_forced_aligner_non_english_warns():
     assert [w.start for w in res.words] == [0.0, 0.3]
 
 
+@needs_align
 def test_forced_align_delegates_to_aligner():
     stub = _StubNyraAligner()
     m = _model(stub)
@@ -354,6 +388,7 @@ def test_forced_align_delegates_to_aligner():
 # Real aligner end to end (downloads the aligner + needs a CT2 model).
 # ---------------------------------------------------------------------------
 
+@needs_align
 @pytest.mark.gpu
 def test_e2e_forced_aligner_matches_direct_alignment(model, en_audio):
     import nyra_align

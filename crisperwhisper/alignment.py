@@ -18,7 +18,8 @@ replaces ``start``/``end`` and fills the extra fields.  The aligner models
 load from the Hugging Face Hub (``nyralabs/nyra_forced_aligner_<lang>`` and
 ``..._pro``) or from a local directory.
 
-``nyra_align`` (and with it torch) is imported lazily, on first use.
+Needs the ``crisperwhisper[align]`` extra; ``nyra_align`` (and with it
+torch) is imported lazily, on first use.
 """
 
 from __future__ import annotations
@@ -386,9 +387,9 @@ def _import_nyra():
         import nyra_align
     except ImportError as exc:
         raise ImportError(
-            "timing_method='forced_aligner' needs nyra-forced-aligner, which "
-            "is part of the crisperwhisper install. Reinstall with:\n"
-            "  pip install --upgrade crisperwhisper"
+            "timing_method='forced_aligner' and ForcedAligner need the "
+            "crisperwhisper[align] extra (provides nyra-forced-aligner). "
+            "Install it with:\n  pip install \"crisperwhisper[align]\""
         ) from exc
     return nyra_align
 
