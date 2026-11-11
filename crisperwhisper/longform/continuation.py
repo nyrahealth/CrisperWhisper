@@ -22,6 +22,7 @@ from crisperwhisper.longform.early_eot import (
 )
 from crisperwhisper.prompt import strip_prompt_artifacts
 from crisperwhisper.result import ChunkResult, WordTimestamp
+from crisperwhisper.unspoken import unspoken_runs
 from crisperwhisper.word_timing import monotonize_words
 
 if TYPE_CHECKING:
@@ -31,6 +32,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16_000
+
+
+def _lift(wt: WordTimestamp, start_sec: float) -> WordTimestamp | None:
+    """A chunk-local timing in global audio time; None if unplaceable."""
+    if wt.start is None or wt.end is None:
+        return None
+    return replace(
+        wt,
+        start=round(float(wt.start) + start_sec, 3),
+        end=round(float(wt.end) + start_sec, 3),
+    )
 
 
 def _overlap_drop_index(
@@ -182,6 +194,40 @@ def continuation_transcribe(
     return " ".join(confirmed_words), chunk_results
 
 
+def _finalize_timeline(
+    words: list[str],
+    timeline: list[WordTimestamp | None],
+    duration: float,
+    *,
+    drop_unspoken: bool,
+    mode: str,
+) -> tuple[list[str], list[WordTimestamp]]:
+    """Monotonize the placed words, then drop runs that were never spoken.
+
+    ``timeline`` is 1-to-1 with ``words`` in global audio time, ``None`` where
+    a word could not be placed. Returns the kept words and their placed
+    timings (unplaced kept words stay in the text only, as before).
+    """
+    placed = [t for t in timeline if t is not None]
+    # Monotonize at chunk seams: each word's start can't precede the
+    # previous word's end, even when Viterbi places a chunk's first word
+    # slightly before the previous chunk's last word ended.
+    monotonize_words(placed)
+    resolved = iter(placed)
+    timeline = [next(resolved) if t is not None else None for t in timeline]
+    if drop_unspoken:
+        dropped = unspoken_runs(words, timeline, duration)
+        if dropped:
+            logger.warning(
+                "Dropped %d decoded word(s) (%s) that were never spoken "
+                "(unplaced or looping; see crisperwhisper.unspoken).",
+                len(dropped), mode,
+            )
+            words = [w for p, w in enumerate(words) if p not in dropped]
+            timeline = [t for p, t in enumerate(timeline) if p not in dropped]
+    return words, [t for t in timeline if t is not None]
+
+
 def continuation_transcribe_with_word_timestamps(
     engine: EngineProtocol,
     prompt_builder: PromptBuilder,
@@ -216,7 +262,9 @@ def continuation_transcribe_with_word_timestamps(
     A final pass clamps each word's ``start`` so that it never goes
     backwards from the previous word's ``end``.  This keeps the timeline
     monotonic at chunk seams even when Viterbi places a word slightly
-    before its predecessor's tail.
+    before its predecessor's tail.  With ``config.drop_unspoken`` it then
+    drops decoded runs that were never spoken (see
+    :mod:`crisperwhisper.unspoken`) from both the text and the timings.
     """
     from crisperwhisper.confidence import (
         decode_with_attention,
@@ -239,7 +287,8 @@ def continuation_transcribe_with_word_timestamps(
 
     confirmed_words: list[str] = []
     chunk_results: list[ChunkResult] = []
-    global_word_timestamps: list[WordTimestamp] = []
+    # 1-to-1 with confirmed_words, global time; None for unplaceable words.
+    timeline: list[WordTimestamp | None] = []
 
     for i, chunk in enumerate(chunks):
         is_last = i == n_chunks - 1
@@ -354,16 +403,10 @@ def continuation_transcribe_with_word_timestamps(
 
         confirmed_words.extend(safe_words)
 
-        # Lift chunk-local timings into global audio time (skip placeholders
-        # for words the Viterbi could not place -- they have no timestamp).
+        # Lift chunk-local timings into global audio time (placeholders for
+        # words the Viterbi could not place stay None).
         for wt in safe_word_ts:
-            if wt.start is None or wt.end is None:
-                continue
-            global_word_timestamps.append(replace(
-                wt,
-                start=round(float(wt.start) + start_sec, 3),
-                end=round(float(wt.end) + start_sec, 3),
-            ))
+            timeline.append(_lift(wt, start_sec))
 
         chunk_results.append(ChunkResult(
             chunk_idx=i,
@@ -380,13 +423,11 @@ def continuation_transcribe_with_word_timestamps(
             sum(1 for wt in safe_word_ts if wt.start is not None),
         )
 
-    # Monotonize at chunk seams: each word's start can't precede the
-    # previous word's end.  Keeps the timeline strictly forward-going
-    # even when Viterbi places a chunk's first word slightly before the
-    # previous chunk's last word ended.
-    monotonize_words(global_word_timestamps)
-
-    return " ".join(confirmed_words), chunk_results, global_word_timestamps
+    words, global_word_timestamps = _finalize_timeline(
+        confirmed_words, timeline, len(audio) / SAMPLE_RATE,
+        drop_unspoken=config.drop_unspoken, mode=mode,
+    )
+    return " ".join(words), chunk_results, global_word_timestamps
 
 
 def _decode_chunk_multi(
@@ -489,7 +530,9 @@ def continuation_transcribe_dual(
 
     confirmed: list[list[str]] = [[] for _ in modes]
     chunk_results: list[list[ChunkResult]] = [[] for _ in modes]
-    global_ts: list[list[WordTimestamp]] = [[] for _ in modes]
+    # Per mode, 1-to-1 with confirmed[j] whenever attention is captured:
+    # global-time timing, None for unplaceable words.
+    timelines: list[list[WordTimestamp | None]] = [[] for _ in modes]
 
     for i, chunk in enumerate(chunks):
         is_last = i == n_chunks - 1
@@ -627,17 +670,11 @@ def continuation_transcribe_dual(
 
             confirmed[j].extend(safe_words)
 
-            # Surface timestamps only when the caller asked for them; skip
-            # placeholders for words the Viterbi could not place.
-            if word_timestamps:
+            # Timings are tracked whenever attention was captured (they drive
+            # the unspoken-word drop) and surfaced only if the caller asked.
+            if capture_attn:
                 for wt in safe_word_ts:
-                    if wt.start is None or wt.end is None:
-                        continue
-                    global_ts[j].append(replace(
-                        wt,
-                        start=round(float(wt.start) + start_sec, 3),
-                        end=round(float(wt.end) + start_sec, 3),
-                    ))
+                    timelines[j].append(_lift(wt, start_sec))
 
             chunk_results[j].append(ChunkResult(
                 chunk_idx=i,
@@ -649,8 +686,12 @@ def continuation_transcribe_dual(
             ))
 
     out: list[tuple[str, list[ChunkResult], list[WordTimestamp]]] = []
-    for j in range(n_modes):
-        if word_timestamps:
-            monotonize_words(global_ts[j])
-        out.append((" ".join(confirmed[j]), chunk_results[j], global_ts[j]))
+    for j, mode in enumerate(modes):
+        words, timed = confirmed[j], []
+        if capture_attn:
+            words, timed = _finalize_timeline(
+                confirmed[j], timelines[j], len(audio) / SAMPLE_RATE,
+                drop_unspoken=config.drop_unspoken, mode=mode,
+            )
+        out.append((" ".join(words), chunk_results[j], timed if word_timestamps else []))
     return out

@@ -74,6 +74,11 @@ class LongformConfig:
     when its context covers what it re-hears.  At ~2.8 words/s a 4 s overlap is
     ~11 words, so the default is 12 (benchmarks: raising 8 -> 12 cut meanwhile
     boundary-region WER roughly in half with no change elsewhere).
+
+    ``drop_unspoken`` removes decoded word runs the aligner finds no room for
+    in the audio, or that loop over what was just said without being placed
+    (see :mod:`crisperwhisper.unspoken`); needs word timings, so it applies
+    whenever cross-attention is captured.
     """
 
     chunk_duration: float = 30.0
@@ -83,6 +88,7 @@ class LongformConfig:
     max_new_tokens: int = 256
     timestamp_aware_drop: bool = True
     temperature_fallback: bool = True
+    drop_unspoken: bool = True
     early_eot: EarlyEotConfig = field(default_factory=EarlyEotConfig)
 
 

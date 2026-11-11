@@ -390,6 +390,18 @@ Notes:
   `alignment_heads=[(layer, head), ...]` if you have a custom selection.
 * `word_timestamps=True` **is** now supported together with
   `speculative_decoding=True` (see below).
+* **Unspoken words are dropped** (continuation longform). When loop
+  repair makes the decoder re-emit text it has already transcribed, the
+  aligner cannot find that text in the audio. Runs of words with no room
+  in the audio (under 50 ms per word between their placed neighbours),
+  squashed onto one instant (under 20 ms each), or looping over what was
+  just said without being placed are removed from both `text` and
+  `words`; each drop logs a warning. This needs word timings, so it runs
+  whenever cross-attention is captured (always for `transcribe`, and for
+  `transcribe_dual` with `word_timestamps=True` or the default
+  timestamp-aware boundary). Turn it off with
+  `LongformConfig(drop_unspoken=False)`. Rules and thresholds:
+  `crisperwhisper/unspoken.py`.
 * `word_timestamps=True` works with **every** `longform_strategy`.  The
   LCS-stitched strategies (`chunked_lcs`, `token_lcs`) recover each
   chunk's cross-attention with one teacher-forced pass -- the generated
